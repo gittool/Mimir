@@ -99,6 +99,30 @@ Once setup is complete:
 3. **Neo4j Browser**: Visit http://localhost:7474 (user: `neo4j`, password: `password`)
 4. **Start Development**: Use `mimir` commands or integrate with your AI workflow
 
+## 🤖 LLM Configuration
+
+**Default Configuration**: All agents (PM, Worker, QC) use **Ollama with `gpt-oss`** model by default.
+
+```bash
+# Verify Ollama is running and model is available
+ollama list | grep gpt-oss
+
+# If not available, pull the model
+ollama pull gpt-oss
+```
+
+**Configuration File**: `.mimir/llm-config.json` (created automatically with defaults)
+
+**Default Setup:**
+- **Provider**: Ollama (local)
+- **Model**: `gpt-oss` (13B params, 32K context)
+- **All Agents**: PM, Worker, and QC use same model
+- **Temperature**: 0.0 (deterministic)
+
+**To customize**: Edit `.mimir/llm-config.json` or see detailed guide at [`docs/configuration/LLM_CONFIGURATION.md`](docs/configuration/LLM_CONFIGURATION.md)
+
+**Future**: RAG/vector embeddings will use separate configuration when implemented.
+
 ### Folder Configuration & File Indexing
 
 #### Initial Folder Setup

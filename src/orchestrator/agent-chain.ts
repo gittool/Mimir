@@ -13,6 +13,7 @@
 import { CopilotAgentClient, AgentConfig } from './llm-client.js';
 import { CopilotModel } from './types.js';
 import { planningTools } from './tools.js';
+import { LLMConfigLoader } from '../config/LLMConfigLoader.js';
 import path from 'path';
 
 /**
@@ -72,7 +73,7 @@ export class AgentChain {
     // Initialize PM Agent with limited tools (prevents OpenAI 128 tool limit)
     this.pmAgent = new CopilotAgentClient({
       preamblePath: path.join(agentsDir, 'claudette-pm.md'),
-      model: CopilotModel.GPT_4_1,
+      agentType: 'pm', // Use PM agent defaults from config
       temperature: 0.0,
       tools: planningTools, // Filesystem + 5 graph search tools = 12 tools
     });
@@ -80,7 +81,7 @@ export class AgentChain {
     // Initialize Ecko Agent (Prompt Architect) with limited tools
     this.eckoAgent = new CopilotAgentClient({
       preamblePath: path.join(agentsDir, 'claudette-ecko.md'),
-      model: CopilotModel.GPT_4_1,
+      agentType: 'pm', // Ecko uses PM-level reasoning capacity
       temperature: 0.0,
       tools: planningTools, // Filesystem + 5 graph search tools = 12 tools
     });
@@ -120,7 +121,14 @@ export class AgentChain {
     console.log('-'.repeat(80) + '\n');
 
     const pmStep1Start = Date.now();
-    const pmStep1Input = `## 🔍 SEARCH EXISTING CONTEXT FIRST
+    
+    // Inject available models list if PM model suggestions feature is enabled
+    const llmConfig = LLMConfigLoader.getInstance();
+    const modelListSection = llmConfig.formatAvailableModelsForPM();
+    
+    const pmStep1Input = `${modelListSection}
+
+## 🔍 SEARCH EXISTING CONTEXT FIRST
 
 Before planning, search the knowledge graph for relevant existing work:
 

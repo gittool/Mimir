@@ -9,6 +9,7 @@
 
 import { CopilotAgentClient } from './llm-client.js';
 import { CopilotModel } from './types.js';
+import { LLMConfigLoader } from '../config/LLMConfigLoader.js';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -16,6 +17,76 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+
+/**
+ * Parse PM-recommended model string
+ * Format can be: "provider/model" or just "model" (uses default provider)
+ * Returns null if parsing fails or model not found in config
+ */
+async function parsePMRecommendedModel(
+  recommendedModel: string
+): Promise<{ provider: string; model: string } | null> {
+  if (!recommendedModel || recommendedModel.trim() === '') {
+    return null;
+  }
+
+  const configLoader = LLMConfigLoader.getInstance();
+  const recommended = recommendedModel.trim();
+  
+  if (recommended.includes('/')) {
+    // Format: "ollama/gpt-oss" or "copilot/gpt-4o"
+    const [provider, model] = recommended.split('/').map(s => s.trim());
+    
+    try {
+      // Validate that this provider/model exists in config
+      await configLoader.getModelConfig(provider, model);
+      return { provider, model };
+    } catch (error: any) {
+      console.warn(`⚠️  PM-suggested model "${provider}/${model}" not found in config`);
+      return null;
+    }
+  } else {
+    // Format: just "gpt-oss" - try to find it in default provider
+    const config = await configLoader.load();
+    const defaultProvider = config.defaultProvider;
+    
+    try {
+      await configLoader.getModelConfig(defaultProvider, recommended);
+      return { provider: defaultProvider, model: recommended };
+    } catch (error: any) {
+      console.warn(`⚠️  PM-suggested model "${recommended}" not found in default provider`);
+      return null;
+    }
+  }
+}
+
+/**
+ * Resolve model selection based on PM suggestion and feature flag
+ * Returns { provider?, model?, agentType? } for CopilotAgentClient constructor
+ */
+async function resolveModelSelection(
+  task: TaskDefinition,
+  agentType: 'pm' | 'worker' | 'qc'
+): Promise<{ provider?: string; model?: string; agentType?: 'pm' | 'worker' | 'qc' }> {
+  const configLoader = LLMConfigLoader.getInstance();
+  const pmSuggestionsEnabled = await configLoader.isPMModelSuggestionsEnabled();
+  
+  // Always parse the PM's recommendation (for logging/debugging)
+  const pmSuggestion = await parsePMRecommendedModel(task.recommendedModel);
+  
+  // Only use PM suggestion if feature is enabled AND parsing succeeded
+  if (pmSuggestionsEnabled && pmSuggestion) {
+    console.log(`✨ Using PM-suggested model: ${pmSuggestion.provider}/${pmSuggestion.model}`);
+    return { provider: pmSuggestion.provider, model: pmSuggestion.model };
+  }
+  
+  // Feature disabled or no valid PM suggestion - use agent type defaults
+  if (pmSuggestion && !pmSuggestionsEnabled) {
+    console.log(`📋 PM suggested ${pmSuggestion.provider}/${pmSuggestion.model} but feature is disabled, using ${agentType} defaults`);
+  }
+  
+  return { agentType };
+}
 
 /**
  * Map friendly model names to actual CopilotModel enum values
@@ -185,46 +256,64 @@ export function parseChainOutput(markdown: string): TaskDefinition[] {
     if (!taskIdMatch) continue;
     const taskId = taskIdMatch[1].trim();
     
-    // Extract parallel group (optional)
-    const parallelGroupMatch = section.match(/#### \*\*Parallel Group\*\*\s*\n(\d+)/);
-    const parallelGroup = parallelGroupMatch ? parseInt(parallelGroupMatch[1], 10) : undefined;
+    // Helper function to extract field value with simple markdown formatting
+    // Format: **Field Name**\nValue (no colons, clean and simple)
+    const extractField = (fieldName: string, required: boolean = false): string | undefined => {
+      // Single pattern: **Field**\n content until next **Field Name** (full word match) or separator
+      // Updated pattern to avoid matching **BOLD TEXT** inside content (requires space or end after **)
+      const pattern = new RegExp(`\\*\\*${fieldName}\\*\\*\\s*\\n([\\s\\S]+?)(?=\\n\\*\\*[A-Z][A-Za-z\\s]+\\*\\*|\\n---|\\n###|\\n####|$)`, 'i');
+      const match = section.match(pattern);
+      if (match) {
+        return match[1].trim();
+      }
+      return undefined;
+    };
     
-    // Extract agent role description
-    const agentRoleMatch = section.match(/#### \*\*Agent Role Description\*\*\s*\n(.+?)(?=\n#### )/s);
-    if (!agentRoleMatch) continue;
-    const agentRole = agentRoleMatch[1].trim();
+    // Extract parallel group (optional) - special case for numeric value
+    const parallelGroupText = extractField('Parallel Group', false);
+    const parallelGroup = parallelGroupText ? parseInt(parallelGroupText, 10) : undefined;
     
-    // Extract recommended model
-    const modelMatch = section.match(/#### \*\*Recommended Model\*\*\s*\n(.+?)(?=\n#### )/s);
-    if (!modelMatch) continue;
-    const model = modelMatch[1].trim();
+    // Extract agent role description (required)
+    const agentRole = extractField('Agent Role Description', true);
+    if (!agentRole) continue;
     
-    // Extract optimized prompt (inside <details> and ```markdown blocks)
-    const promptMatch = section.match(/#### \*\*Optimized Prompt\*\*\s*\n(?:<details>[\s\S]*?<summary>[\s\S]*?<\/summary>\s*\n)?```(?:markdown)?\n([\s\S]+?)\n```(?:\s*\n<\/details>)?/);
-    if (!promptMatch) continue;
-    const prompt = promptMatch[1].trim();
+    // Extract recommended model (required)
+    const model = extractField('Recommended Model', true);
+    if (!model) continue;
     
-    // Extract dependencies
-    const depsMatch = section.match(/#### \*\*Dependencies\*\*\s*\n(.+?)(?=\n#### )/s);
-    if (!depsMatch) continue;
-    const deps = depsMatch[1].trim();
+    // Extract optimized prompt - expects <prompt>Content</prompt> format
+    // (This format is generated by Ecko agent - see docs/agents/claudette-ecko.md)
+    let prompt: string | undefined;
+    let promptSection = extractField('Optimized Prompt', true);
+    if (!promptSection) continue;
     
-    // Extract estimated duration (may be last field, so use more flexible match)
-    const durationMatch = section.match(/#### \*\*Estimated Duration\*\*\s*\n(.+?)(?=\n#### |\n\n####|$)/s);
-    if (!durationMatch) continue;
-    const duration = durationMatch[1].trim();
+    // Extract content from <prompt> tags
+    const promptTagMatch = promptSection.match(/<prompt>\s*([\s\S]+?)\s*<\/prompt>/i);
+    if (promptTagMatch) {
+      prompt = promptTagMatch[1].trim();
+    } else {
+      // Fallback: if no tags found, use raw content (strip any HTML)
+      prompt = promptSection.replace(/<[^>]+>/g, '').trim();
+    }
+    
+    // Extract dependencies (required)
+    const depsText = extractField('Dependencies', true);
+    if (!depsText) continue;
+    const deps = depsText.toLowerCase() === 'none' ? [] : depsText.split(',').map(d => d.trim());
+    
+    // Extract estimated duration (required)
+    const duration = extractField('Estimated Duration', true);
+    if (!duration) continue;
     
     // Extract QC Agent Role (optional)
-    const qcRoleMatch = section.match(/#### \*\*QC Agent Role\*\*\s*\n(.+?)(?=\n#### )/s);
-    const qcRole = qcRoleMatch ? qcRoleMatch[1].trim() : undefined;
+    const qcRole = extractField('QC Agent Role', false);
     
     // Extract Verification Criteria (optional)
-    const verificationMatch = section.match(/#### \*\*Verification Criteria\*\*\s*\n([\s\S]+?)(?=\n#### |---|\z)/);
-    const verificationCriteria = verificationMatch ? verificationMatch[1].trim() : undefined;
+    const verificationCriteria = extractField('Verification Criteria', false);
     
     // Extract Max Retries (optional)
-    const retriesMatch = section.match(/#### \*\*Max Retries\*\*\s*\n(\d+)/);
-    const maxRetries = retriesMatch ? parseInt(retriesMatch[1], 10) : 2; // Default to 2
+    const retriesText = extractField('Max Retries', false);
+    const maxRetries = retriesText ? parseInt(retriesText, 10) : 2; // Default to 2
     
     tasks.push({
       id: taskId,
@@ -232,7 +321,7 @@ export function parseChainOutput(markdown: string): TaskDefinition[] {
       agentRoleDescription: agentRole,
       recommendedModel: model,
       prompt: prompt,
-      dependencies: deps === 'None' || deps.toLowerCase() === 'none' ? [] : deps.split(',').map(d => d.trim()),
+      dependencies: deps,
       estimatedDuration: duration,
       parallelGroup,
       qcRole,
@@ -493,10 +582,13 @@ async function executeQCAgent(
     // Build QC prompt with pre-fetched context
     const qcPrompt = buildQCPrompt(task, workerOutput, attemptNumber, qcContext);
     
+    // Resolve model selection based on PM suggestion and feature flag
+    const modelSelection = await resolveModelSelection(task, 'qc');
+    
     // Initialize QC agent with strict output limits
     const qcAgent = new CopilotAgentClient({
       preamblePath: task.qcPreamblePath,
-      model: CopilotModel.GPT_4_1, // Use GPT-4.1 for QC
+      ...modelSelection, // Spread provider/model or agentType
       temperature: 0.0, // Maximum consistency and strictness
       maxTokens: 1000, // STRICT LIMIT: Force concise responses (prevents verbose QC bloat)
     });
@@ -583,9 +675,12 @@ Generate a CONCISE failure report (MAXIMUM 3000 characters) including:
 - Be specific but CONCISE`;
 
   try {
+    // Resolve model selection based on PM suggestion and feature flag
+    const modelSelection = await resolveModelSelection(task, 'qc');
+    
     const qcAgent = new CopilotAgentClient({
       preamblePath: task.qcPreamblePath,
-      model: CopilotModel.GPT_4_1,
+      ...modelSelection, // Spread provider/model or agentType
       temperature: 0.0,
       maxTokens: 2000, // STRICT LIMIT: Concise failure reports only
     });
@@ -820,10 +915,12 @@ export async function executeTask(
       // Pre-fetch context from graph
       const workerContext = await fetchTaskContext(task.id, 'worker');
       
-    const model = CopilotModel.GPT_4_1;
+      // Resolve model selection based on PM suggestion and feature flag
+      const modelSelection = await resolveModelSelection(task, 'worker');
+      
       const workerAgent = new CopilotAgentClient({
         preamblePath,
-        model: model,
+        ...modelSelection, // Spread provider/model or agentType
         temperature: 0.0,
       });
       
@@ -1037,10 +1134,9 @@ async function executeTaskLegacy(
   startTime: number
 ): Promise<ExecutionResult> {
   try {
-    const model = CopilotModel.GPT_4_1;
     const agent = new CopilotAgentClient({
       preamblePath,
-      model: model,
+      agentType: 'worker', // Use worker agent defaults from config
       temperature: 0.0,
     });
     
@@ -1423,9 +1519,14 @@ For each task (${results.length} total, max 3 sentences per task):
   
   console.log('🤖 Initializing PM agent for final report...');
   
+  // Resolve model selection based on PM suggestion and feature flag
+  // Note: For final report, we use a dummy task object since there's no specific task
+  const dummyTask: Partial<TaskDefinition> = { id: 'final-report', title: 'Final Report' };
+  const modelSelection = await resolveModelSelection(dummyTask as TaskDefinition, 'pm');
+  
   const pmAgent = new CopilotAgentClient({
     preamblePath: pmPreamblePath,
-    model: CopilotModel.GPT_4_1,
+    ...modelSelection, // Spread provider/model or agentType
     temperature: 0.0,
     maxTokens: 3000, // STRICT LIMIT: Concise reports only (prevents verbose PM bloat)
   });

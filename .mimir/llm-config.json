@@ -1,0 +1,93 @@
+{
+  "defaultProvider": "ollama",
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://localhost:11434",
+      "defaultModel": "gpt-oss",
+      "models": {
+        "gpt-oss": {
+          "name": "gpt-oss",
+          "contextWindow": 32768,
+          "description": "Open-source GPT model (13B params), good balance of quality and speed",
+          "recommendedFor": ["pm", "worker", "qc"],
+          "config": {
+            "numCtx": 32768,
+            "temperature": 0.0,
+            "numPredict": -1
+          }
+        },
+        "tinyllama": {
+          "name": "tinyllama",
+          "contextWindow": 8192,
+          "description": "1.1B params, very fast inference (backup/testing only)",
+          "recommendedFor": ["testing"],
+          "config": {
+            "numCtx": 8192,
+            "temperature": 0.0,
+            "numPredict": -1
+          }
+        },
+        "qwen2.5-coder:1.5b-base": {
+          "name": "qwen2.5-coder:1.5b-base",
+          "contextWindow": 32768,
+          "description": "1.5B params coding specialist, fast inference",
+          "recommendedFor": ["worker"],
+          "config": {
+            "numCtx": 32768,
+            "temperature": 0.0,
+            "numPredict": -1
+          }
+        },
+        "deepseek-coder:6.7b": {
+          "name": "deepseek-coder:6.7b",
+          "contextWindow": 16384,
+          "description": "6.7B params coding specialist",
+          "recommendedFor": ["worker"],
+          "config": {
+            "numCtx": 16384,
+            "temperature": 0.0,
+            "numPredict": -1
+          }
+        }
+      }
+    },
+    "copilot": {
+      "baseUrl": "http://localhost:4141/v1",
+      "defaultModel": "gpt-4o",
+      "models": {
+        "gpt-4o": {
+          "name": "gpt-4o",
+          "contextWindow": 128000,
+          "description": "OpenAI GPT-4o via GitHub Copilot (requires active subscription)",
+          "recommendedFor": ["pm"],
+          "config": {
+            "maxTokens": -1,
+            "temperature": 0.0
+          }
+        }
+      }
+    }
+  },
+  "agentDefaults": {
+    "pm": {
+      "provider": "ollama",
+      "model": "gpt-oss",
+      "rationale": "PM agents need strong reasoning for task decomposition and planning"
+    },
+    "worker": {
+      "provider": "ollama",
+      "model": "gpt-oss",
+      "rationale": "Worker agents execute tasks with consistent quality"
+    },
+    "qc": {
+      "provider": "ollama",
+      "model": "gpt-oss",
+      "rationale": "QC agents validate output with strict consistency"
+    }
+  },
+  "features": {
+    "pmModelSuggestions": false,
+    "_comment": "When true, PM agent can suggest specific models for tasks based on available models. When false/missing, always use agentDefaults."
+  },
+  "_comment": "RAG/Vector embeddings will use separate configuration when implemented. This config is for agent LLM inference only."
+}
