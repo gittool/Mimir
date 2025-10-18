@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 // ============================================================================
 // MCP Graph-RAG Server
 // Unified graph model with Neo4j backend
