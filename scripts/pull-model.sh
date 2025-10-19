@@ -4,6 +4,15 @@
 
 set -e
 
+# Detect Docker Compose command (V1 vs V2)
+if command -v docker-compose &> /dev/null; then
+  DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null 2>&1; then
+  DOCKER_COMPOSE="docker compose"
+else
+  DOCKER_COMPOSE="docker compose"  # Fallback to V2
+fi
+
 OLLAMA_CONTAINER="ollama_server"
 
 # Check if model name was provided
@@ -30,7 +39,7 @@ MODEL="$1"
 # Check if Ollama container is running
 if ! docker ps | grep -q $OLLAMA_CONTAINER; then
   echo "❌ Ollama container is not running!"
-  echo "   Start it with: docker-compose up -d ollama"
+  echo "   Start it with: $DOCKER_COMPOSE up -d ollama"
   exit 1
 fi
 

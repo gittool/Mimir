@@ -21,7 +21,7 @@ tools: ['edit', 'runNotebooks', 'search', 'new', 'runCommands', 'runTasks', 'usa
    ```markdown
    ❌ WRONG: "User wants Docker" → Create generic Docker task
    ✅ CORRECT: "User wants Docker" → Analyze repo → Identify:
-      - Multi-service architecture? (docker-compose needed)
+      - Multi-service architecture? (docker compose needed)
       - Volume persistence? (data directories to mount)
       - Build stages? (multi-stage Dockerfile for optimization)
       - Existing services? (ports, networks, dependencies)
@@ -55,9 +55,9 @@ tools: ['edit', 'runNotebooks', 'search', 'new', 'runCommands', 'runTasks', 'usa
    // Create task nodes with full context
    graph_add_node({
      type: 'todo',
-     id: 'task-docker-compose',
+     id: 'task-docker compose',
      properties: {
-       title: 'Create docker-compose.yml with 3 services',
+       title: 'Create docker compose.yml with 3 services',
        context: 'Repository has Express API (port 3000), PostgreSQL (migrations in db/), Redis (caching layer)',
        contextSources: [
          'package.json for dependencies',
@@ -65,7 +65,7 @@ tools: ['edit', 'runNotebooks', 'search', 'new', 'runCommands', 'runTasks', 'usa
          'graph_search_nodes("database schema")'
        ],
        acceptanceCriteria: [
-         'docker-compose up starts all 3 services',
+         'docker compose up starts all 3 services',
          'API can connect to PostgreSQL',
          'Redis cache accessible from API',
          'Volumes persist data across restarts'
@@ -920,7 +920,7 @@ Basic Interpretation:
 
 Best Practices Expansion:
 - Multi-stage Dockerfile (reduce image size)
-- docker-compose.yml (service orchestration)
+- docker compose.yml (service orchestration)
 - .dockerignore (exclude node_modules, .git)
 - Volume configuration (persist data)
 - Environment variables (.env.example)
@@ -1122,7 +1122,7 @@ familiar with {Tool/Pattern 1} and {Tool/Pattern 2}.
 | **Backend API** | Backend engineer with Node.js and TypeScript expertise, experienced in RESTful API design, middleware patterns, and error handling. Understands async/await patterns and HTTP semantics, familiar with Express.js and validation libraries. |
 | **Frontend UI** | Frontend developer with React and TypeScript expertise, experienced in component architecture, state management, and responsive design. Understands virtual DOM and React lifecycle, familiar with Hooks API and styled-components. |
 | **Database** | Database engineer with PostgreSQL and SQL expertise, experienced in schema design, query optimization, and migration management. Understands indexing strategies and ACID properties, familiar with ORMs and connection pooling. |
-| **DevOps** | DevOps engineer with Docker and container orchestration expertise, experienced in multi-service architecture, networking, and volume management. Understands containerization and service dependencies, familiar with docker-compose and health checks. |
+| **DevOps** | DevOps engineer with Docker and container orchestration expertise, experienced in multi-service architecture, networking, and volume management. Understands containerization and service dependencies, familiar with docker compose and health checks. |
 | **Testing** | QA engineer with Jest and integration testing expertise, experienced in test design, mocking, and coverage analysis. Understands testing pyramid and test isolation, familiar with supertest and test fixtures. |
 | **Security** | Security engineer with authentication and cryptography expertise, experienced in OAuth2, JWT patterns, and secure storage. Understands token lifecycle and OWASP guidelines, familiar with bcrypt and key management. |
 

@@ -31,6 +31,15 @@ export interface ProviderConfig {
   authInstructions?: string;
 }
 
+export interface EmbeddingsConfig {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  dimensions?: number;
+  chunkSize?: number;
+  chunkOverlap?: number;
+}
+
 export interface LLMConfig {
   defaultProvider: string;
   providers: Record<string, ProviderConfig>;
@@ -39,8 +48,10 @@ export interface LLMConfig {
     model: string;
     rationale: string;
   }>;
+  embeddings?: EmbeddingsConfig;
   features?: {
     pmModelSuggestions?: boolean;
+    vectorEmbeddings?: boolean;
   };
 }
 
@@ -67,6 +78,62 @@ export class LLMConfigLoader {
     this.config = null;
   }
 
+  /**
+   * Apply environment variable overrides to config
+   * Allows docker-compose.yml to control feature flags and settings
+   */
+  private applyEnvironmentOverrides(config: LLMConfig): void {
+    // Override Ollama baseUrl
+    if (process.env.OLLAMA_BASE_URL && config.providers.ollama) {
+      config.providers.ollama.baseUrl = process.env.OLLAMA_BASE_URL;
+      console.log(`🔧 Ollama URL: ${process.env.OLLAMA_BASE_URL}`);
+    }
+
+    // Feature flags
+    if (process.env.MIMIR_FEATURE_PM_MODEL_SUGGESTIONS !== undefined) {
+      config.features = config.features || {};
+      config.features.pmModelSuggestions = process.env.MIMIR_FEATURE_PM_MODEL_SUGGESTIONS === 'true';
+      console.log(`🔧 PM Model Suggestions: ${config.features.pmModelSuggestions}`);
+    }
+
+    if (process.env.MIMIR_FEATURE_VECTOR_EMBEDDINGS !== undefined) {
+      config.features = config.features || {};
+      config.features.vectorEmbeddings = process.env.MIMIR_FEATURE_VECTOR_EMBEDDINGS === 'true';
+      console.log(`🔧 Vector Embeddings Feature: ${config.features.vectorEmbeddings}`);
+    }
+
+    // Embeddings configuration
+    if (process.env.MIMIR_EMBEDDINGS_ENABLED !== undefined) {
+      config.embeddings = config.embeddings || {
+        enabled: false,
+        provider: 'ollama',
+        model: 'nomic-embed-text',
+        dimensions: 768,
+        chunkSize: 512,
+        chunkOverlap: 50
+      };
+      config.embeddings.enabled = process.env.MIMIR_EMBEDDINGS_ENABLED === 'true';
+      console.log(`🔧 Embeddings Enabled: ${config.embeddings.enabled}`);
+    }
+
+    if (process.env.MIMIR_EMBEDDINGS_MODEL && config.embeddings) {
+      config.embeddings.model = process.env.MIMIR_EMBEDDINGS_MODEL;
+      console.log(`🔧 Embeddings Model: ${config.embeddings.model}`);
+    }
+
+    if (process.env.MIMIR_EMBEDDINGS_DIMENSIONS && config.embeddings) {
+      config.embeddings.dimensions = parseInt(process.env.MIMIR_EMBEDDINGS_DIMENSIONS, 10);
+    }
+
+    if (process.env.MIMIR_EMBEDDINGS_CHUNK_SIZE && config.embeddings) {
+      config.embeddings.chunkSize = parseInt(process.env.MIMIR_EMBEDDINGS_CHUNK_SIZE, 10);
+    }
+
+    if (process.env.MIMIR_EMBEDDINGS_CHUNK_OVERLAP && config.embeddings) {
+      config.embeddings.chunkOverlap = parseInt(process.env.MIMIR_EMBEDDINGS_CHUNK_OVERLAP, 10);
+    }
+  }
+
   async load(): Promise<LLMConfig> {
     if (this.config) {
       return this.config;
@@ -81,11 +148,8 @@ export class LLMConfigLoader {
         throw new Error('Invalid config: missing defaultProvider or providers');
       }
       
-      // Override Ollama baseUrl from environment variable if set (for Docker)
-      if (process.env.OLLAMA_BASE_URL && parsedConfig.providers.ollama) {
-        parsedConfig.providers.ollama.baseUrl = process.env.OLLAMA_BASE_URL;
-        console.log(`🔧 Using Ollama from environment: ${process.env.OLLAMA_BASE_URL}`);
-      }
+      // Apply environment variable overrides (Docker-friendly)
+      this.applyEnvironmentOverrides(parsedConfig);
       
       this.config = parsedConfig;
       return this.config!;
@@ -104,7 +168,7 @@ export class LLMConfigLoader {
   }
 
   private getDefaultConfig(): LLMConfig {
-    return {
+    const config: LLMConfig = {
       defaultProvider: 'ollama',
       providers: {
         ollama: {
@@ -137,6 +201,11 @@ export class LLMConfigLoader {
         },
       },
     };
+
+    // Apply environment overrides (including embeddings config)
+    this.applyEnvironmentOverrides(config);
+    
+    return config;
   }
 
   async getModelConfig(provider: string, model: string): Promise<ModelConfig> {
@@ -228,6 +297,19 @@ export class LLMConfigLoader {
   async isPMModelSuggestionsEnabled(): Promise<boolean> {
     const config = await this.load();
     return config.features?.pmModelSuggestions === true;
+  }
+
+  async isVectorEmbeddingsEnabled(): Promise<boolean> {
+    const config = await this.load();
+    return config.features?.vectorEmbeddings === true && config.embeddings?.enabled === true;
+  }
+
+  async getEmbeddingsConfig(): Promise<EmbeddingsConfig | null> {
+    const config = await this.load();
+    if (!config.embeddings?.enabled) {
+      return null;
+    }
+    return config.embeddings;
   }
 
   async getAvailableModels(provider?: string): Promise<Array<{

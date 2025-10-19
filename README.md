@@ -107,8 +107,8 @@ curl http://localhost:7474        # Neo4j browser
 curl http://localhost:4141/v1/models  # Copilot API
 
 # View service logs
-docker-compose logs neo4j
-docker-compose logs mcp-server
+docker compose logs neo4j
+docker compose logs mcp-server
 ```
 
 ### Next Steps
@@ -176,10 +176,10 @@ docker exec mcp_server node check-watches.js
 
 #### Docker Configuration
 
-The docker-compose.yml includes automatic mount configuration:
+The docker compose.yml includes automatic mount configuration:
 
 ```yaml
-# docker-compose.yml (already configured)
+# docker compose.yml (already configured)
 volumes:
   - ${HOST_WORKSPACE_ROOT:-~/src}:/workspace:ro  # Mounts your src folder as /workspace
 ```
@@ -188,9 +188,9 @@ volumes:
 ```bash
 # Option 1: Set environment variable (recommended)
 export HOST_WORKSPACE_ROOT=~/projects
-docker-compose up -d
+docker compose up -d
 
-# Option 2: Edit docker-compose.yml directly
+# Option 2: Edit docker compose.yml directly
 # Change the line to your preferred path:
 # - ${HOST_WORKSPACE_ROOT:-/path/to/your/workspace}:/workspace:ro
 ```
@@ -198,7 +198,7 @@ docker-compose up -d
 #### How It Works
 
 1. **Environment Detection**: Automatically detects host vs Docker container
-   - **Docker**: Uses `WORKSPACE_ROOT=/workspace` (set in docker-compose.yml)
+   - **Docker**: Uses `WORKSPACE_ROOT=/workspace` (set in docker compose.yml)
    - **Host**: Uses current directory or `WATCH_PATH` environment variable
 
 2. **Path Mapping**:
@@ -237,17 +237,24 @@ node setup-watch.js /workspace/src
 node setup-watch.js /workspace/docs
 ```
 
-**For complete documentation**, see [docs/guides/FILE_WATCHING_GUIDE.md](docs/guides/FILE_WATCHING_GUIDE.md)
-await mcp.call('watch_folder', {
-  path: '/workspace/docs',
-  recursive: true,
-  file_patterns: ['*.md', '*.txt']
-});
+**Enable vector embeddings** (optional - for semantic search):
+```bash
+# 1. Edit .env file
+MIMIR_FEATURE_VECTOR_EMBEDDINGS=true
+MIMIR_EMBEDDINGS_ENABLED=true
+MIMIR_EMBEDDINGS_MODEL=nomic-embed-text
+
+# 2. Start with Ollama (embedding model auto-installed)
+docker compose --profile ollama up -d
+./scripts/setup-ollama-models.sh  # Pulls embeddings model automatically
+
+# 3. Index files with embeddings
+docker exec mcp_server node setup-watch.js
 ```
 
-#### Folder Path Requirements
-- **Root Path**: All watched folders must be under `/workspace` (Docker mount)
-- **Sub-folders**: You can add any sub-folder: `/workspace/src`, `/workspace/docs`, etc.
+**For complete documentation**, see:
+- [File Watching Guide](docs/guides/FILE_WATCHING_GUIDE.md)
+- [Vector Embeddings Guide](docs/guides/VECTOR_EMBEDDINGS_GUIDE.md)
 - **Recursive**: Set `recursive: true` to watch subdirectories automatically
 - **File Patterns**: Use glob patterns to filter file types: `['*.ts', '*.js']`
 
@@ -421,8 +428,8 @@ npx tsc --version  # Should be 5.x
 **Check Service Status:**
 ```bash
 npm run setup:verify     # Overall health check
-docker-compose ps        # Container status
-docker-compose logs      # Service logs
+docker compose ps        # Container status
+docker compose logs      # Service logs
 curl http://localhost:7474  # Neo4j health
 curl http://localhost:4141/v1/models  # Copilot API health
 ```
@@ -579,7 +586,7 @@ const qcContext = await get_task_context({
 ### Development (with Neo4j)
 ```bash
 # Start Neo4j only
-docker-compose up -d
+docker compose up -d
 
 # Run MCP server locally
 npm run build
@@ -685,7 +692,7 @@ cd GRAPH-RAG-TODO-main
 cp .env.example .env
 
 # Build and start
-docker-compose up -d
+docker compose up -d
 
 # Verify health
 curl http://localhost:3000/health

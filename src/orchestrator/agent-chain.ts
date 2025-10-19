@@ -199,6 +199,165 @@ export class AgentChain {
   }
 
   /**
+   * Store chain execution metadata in graph
+   */
+  private async storeExecutionInGraph(
+    executionId: string,
+    userRequest: string,
+    status: 'running' | 'completed' | 'failed',
+    result?: AgentChainResult,
+    error?: Error
+  ): Promise<void> {
+    if (!this.graphManager) return;
+
+    try {
+      const properties: Record<string, any> = {
+        id: executionId,
+        userRequest,
+        status,
+        startTime: new Date().toISOString(),
+        endTime: status !== 'running' ? new Date().toISOString() : undefined,
+        duration: result?.totalDuration,
+        totalTokens: result ? result.totalTokens.input + result.totalTokens.output : undefined,
+        inputTokens: result?.totalTokens.input,
+        outputTokens: result?.totalTokens.output,
+        stepCount: result?.steps.length,
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+      };
+
+      await this.graphManager.addNode('chain_execution', properties);
+      console.log(`📊 Execution ${executionId} tracked in graph (${status})`);
+    } catch (error) {
+      console.warn('⚠️  Failed to store execution in graph:', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * Store agent step in graph
+   */
+  private async storeStepInGraph(
+    executionId: string,
+    step: AgentChainStep,
+    stepIndex: number,
+    status: 'completed' | 'failed',
+    error?: Error
+  ): Promise<void> {
+    if (!this.graphManager) return;
+
+    try {
+      const stepId = `${executionId}-step-${stepIndex}`;
+      const properties: Record<string, any> = {
+        id: stepId,
+        executionId,
+        stepIndex,
+        agentName: step.agentName,
+        agentRole: step.agentRole,
+        status,
+        input: step.input.substring(0, 5000), // Truncate long inputs
+        output: step.output.substring(0, 5000), // Truncate long outputs
+        toolCalls: step.toolCalls,
+        inputTokens: step.tokens.input,
+        outputTokens: step.tokens.output,
+        duration: step.duration,
+        timestamp: new Date().toISOString(),
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+      };
+
+      await this.graphManager.addNode('agent_step', properties);
+      
+      // Link step to execution
+      await this.graphManager.addEdge(stepId, executionId, 'belongs_to');
+      
+      // Link to previous step if exists
+      if (stepIndex > 0) {
+        const prevStepId = `${executionId}-step-${stepIndex - 1}`;
+        await this.graphManager.addEdge(stepId, prevStepId, 'follows');
+      }
+
+      console.log(`  📝 Step ${stepIndex} tracked in graph`);
+    } catch (error) {
+      console.warn('  ⚠️  Failed to store step in graph:', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * Store failure pattern in graph for future learning
+   */
+  private async storeFailurePattern(
+    executionId: string,
+    stepIndex: number,
+    agentName: string,
+    taskDescription: string,
+    error: Error,
+    context: string
+  ): Promise<void> {
+    if (!this.graphManager) return;
+
+    try {
+      const failureId = `failure-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      const properties: Record<string, any> = {
+        id: failureId,
+        executionId,
+        stepIndex,
+        agentName,
+        taskDescription: taskDescription.substring(0, 500),
+        errorType: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        context: context.substring(0, 1000),
+        timestamp: new Date().toISOString(),
+        lessons: `Failed when: ${error.message}. Context: ${context.substring(0, 200)}`,
+      };
+
+      await this.graphManager.addNode('failure_pattern', properties);
+      
+      // Link to execution
+      await this.graphManager.addEdge(failureId, executionId, 'occurred_in');
+
+      console.log(`  ❌ Failure pattern stored: ${failureId}`);
+    } catch (err) {
+      console.warn('  ⚠️  Failed to store failure pattern:', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /**
+   * Query similar failures from past executions
+   */
+  private async findSimilarFailures(taskDescription: string): Promise<string> {
+    if (!this.graphManager) return '';
+
+    try {
+      const failures = await this.graphManager.queryNodes('failure_pattern');
+      
+      if (failures.length === 0) {
+        return '';
+      }
+
+      // Simple relevance check (could be enhanced with embeddings later)
+      const relevant = failures.filter(f => {
+        const desc = f.properties.taskDescription?.toLowerCase() || '';
+        const keywords = taskDescription.toLowerCase().split(' ').filter(w => w.length > 3);
+        return keywords.some(k => desc.includes(k));
+      });
+
+      if (relevant.length === 0) {
+        return '';
+      }
+
+      const warnings = relevant.slice(0, 3).map((f, i) => 
+        `${i + 1}. ⚠️  Previous failure: ${f.properties.errorMessage}\n   Lesson: ${f.properties.lessons}`
+      ).join('\n\n');
+
+      return `\n## ⚠️  LESSONS FROM PAST FAILURES\n\n${warnings}\n\n**Important**: Review these failures and avoid similar mistakes.\n`;
+    } catch (error) {
+      console.warn('  ⚠️  Failed to query similar failures:', error instanceof Error ? error.message : String(error));
+      return '';
+    }
+  }
+
+  /**
    * Execute the full agent chain
    * 
    * @param userRequest - High-level user request (e.g., "Draft up plan X")
@@ -207,14 +366,22 @@ export class AgentChain {
   async execute(userRequest: string): Promise<AgentChainResult> {
     const steps: AgentChainStep[] = [];
     const startTime = Date.now();
+    const executionId = `exec-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
     console.log('\n' + '='.repeat(80));
     console.log('🚀 AGENT CHAIN EXECUTION (Ecko → PM)');
     console.log('='.repeat(80));
-    console.log(`📝 User Request: ${userRequest}\n`);
+    console.log(`📝 User Request: ${userRequest}`);
+    console.log(`🆔 Execution ID: ${executionId}\n`);
+
+    // Store execution start in graph
+    await this.storeExecutionInGraph(executionId, userRequest, 'running');
 
     // Gather context from knowledge graph ONCE
     const graphContext = await this.gatherGraphContext(userRequest);
+    
+    // Find similar past failures
+    const pastFailures = await this.findSimilarFailures(userRequest);
 
     // STEP 1: Ecko Agent - Request Analysis & Optimization
     console.log('\n' + '-'.repeat(80));
@@ -222,7 +389,7 @@ export class AgentChain {
     console.log('-'.repeat(80) + '\n');
 
     const eckoStep1Start = Date.now();
-    const eckoStep1Input = `${graphContext}
+    const eckoStep1Input = `${graphContext}${pastFailures}
 
 ---
 
@@ -242,24 +409,51 @@ Provide an optimized specification that:
 3. Defines key requirements and constraints
 4. Establishes success criteria
 5. Notes any assumptions or clarifications
+6. If past failures are shown, explain how to avoid them
 
 Keep it concise and actionable.`;
 
-    const eckoStep1Result = await this.eckoAgent.execute(eckoStep1Input);
-    
-    steps.push({
-      agentName: 'Ecko Agent',
-      agentRole: 'Request Optimization',
-      input: eckoStep1Input,
-      output: eckoStep1Result.output,
-      toolCalls: eckoStep1Result.toolCalls,
-      tokens: eckoStep1Result.tokens,
-      duration: Date.now() - eckoStep1Start,
-    });
+    let eckoStep1Result;
+    try {
+      eckoStep1Result = await this.eckoAgent.execute(eckoStep1Input);
+      
+      const eckoStep1 = {
+        agentName: 'Ecko Agent',
+        agentRole: 'Request Optimization',
+        input: eckoStep1Input,
+        output: eckoStep1Result.output,
+        toolCalls: eckoStep1Result.toolCalls,
+        tokens: eckoStep1Result.tokens,
+        duration: Date.now() - eckoStep1Start,
+      };
+      
+      steps.push(eckoStep1);
+      await this.storeStepInGraph(executionId, eckoStep1, 0, 'completed');
 
-    console.log(`\n✅ Ecko completed optimization in ${((Date.now() - eckoStep1Start) / 1000).toFixed(2)}s`);
-    console.log(`📊 Tool calls: ${eckoStep1Result.toolCalls}`);
-    console.log(`🎯 Output preview:\n${eckoStep1Result.output.substring(0, 300)}...\n`);
+      console.log(`\n✅ Ecko completed optimization in ${((Date.now() - eckoStep1Start) / 1000).toFixed(2)}s`);
+      console.log(`📊 Tool calls: ${eckoStep1Result.toolCalls}`);
+      console.log(`🎯 Output preview:\n${eckoStep1Result.output.substring(0, 300)}...\n`);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error(`\n❌ Ecko step failed: ${err.message}`);
+      
+      const failedStep = {
+        agentName: 'Ecko Agent',
+        agentRole: 'Request Optimization',
+        input: eckoStep1Input,
+        output: `ERROR: ${err.message}`,
+        toolCalls: 0,
+        tokens: { input: 0, output: 0 },
+        duration: Date.now() - eckoStep1Start,
+      };
+      
+      steps.push(failedStep);
+      await this.storeStepInGraph(executionId, failedStep, 0, 'failed', err);
+      await this.storeFailurePattern(executionId, 0, 'Ecko Agent', userRequest, err, graphContext);
+      await this.storeExecutionInGraph(executionId, userRequest, 'failed', undefined, err);
+      
+      throw error;
+    }
 
     // STEP 2: PM Agent - Task Breakdown based on Ecko's optimized spec
     console.log('\n' + '-'.repeat(80));
@@ -267,7 +461,7 @@ Keep it concise and actionable.`;
     console.log('-'.repeat(80) + '\n');
 
     const pmStep2Start = Date.now();
-    const pmStep2Input = `${graphContext}
+    const pmStep2Input = `${graphContext}${pastFailures}
 
 ---
 
@@ -299,24 +493,51 @@ Provide:
    - Dependencies
    - Estimated duration
    - Verification criteria
+5. If past failures are shown, include avoidance strategies
 
 Output in markdown format ready for worker execution.`;
 
-    const pmStep2Result = await this.pmAgent.execute(pmStep2Input);
-    
-    steps.push({
-      agentName: 'PM Agent',
-      agentRole: 'Task Breakdown',
-      input: pmStep2Input,
-      output: pmStep2Result.output,
-      toolCalls: pmStep2Result.toolCalls,
-      tokens: pmStep2Result.tokens,
-      duration: Date.now() - pmStep2Start,
-    });
+    let pmStep2Result;
+    try {
+      pmStep2Result = await this.pmAgent.execute(pmStep2Input);
+      
+      const pmStep2 = {
+        agentName: 'PM Agent',
+        agentRole: 'Task Breakdown',
+        input: pmStep2Input,
+        output: pmStep2Result.output,
+        toolCalls: pmStep2Result.toolCalls,
+        tokens: pmStep2Result.tokens,
+        duration: Date.now() - pmStep2Start,
+      };
+      
+      steps.push(pmStep2);
+      await this.storeStepInGraph(executionId, pmStep2, 1, 'completed');
 
-    console.log(`\n✅ PM completed task breakdown in ${((Date.now() - pmStep2Start) / 1000).toFixed(2)}s`);
-    console.log(`📊 Tool calls: ${pmStep2Result.toolCalls}`);
-    console.log(`🎯 Output preview:\n${pmStep2Result.output.substring(0, 300)}...\n`);
+      console.log(`\n✅ PM completed task breakdown in ${((Date.now() - pmStep2Start) / 1000).toFixed(2)}s`);
+      console.log(`📊 Tool calls: ${pmStep2Result.toolCalls}`);
+      console.log(`🎯 Output preview:\n${pmStep2Result.output.substring(0, 300)}...\n`);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error(`\n❌ PM step failed: ${err.message}`);
+      
+      const failedStep = {
+        agentName: 'PM Agent',
+        agentRole: 'Task Breakdown',
+        input: pmStep2Input,
+        output: `ERROR: ${err.message}`,
+        toolCalls: 0,
+        tokens: { input: 0, output: 0 },
+        duration: Date.now() - pmStep2Start,
+      };
+      
+      steps.push(failedStep);
+      await this.storeStepInGraph(executionId, failedStep, 1, 'failed', err);
+      await this.storeFailurePattern(executionId, 1, 'PM Agent', userRequest, err, eckoStep1Result.output);
+      await this.storeExecutionInGraph(executionId, userRequest, 'failed', undefined, err);
+      
+      throw error;
+    }
 
     // Calculate totals
     const totalTokens = steps.reduce(
@@ -329,10 +550,21 @@ Output in markdown format ready for worker execution.`;
 
     const totalDuration = Date.now() - startTime;
 
+    const result: AgentChainResult = {
+      steps,
+      finalOutput: pmStep2Result.output,
+      totalTokens,
+      totalDuration,
+    };
+
+    // Store completed execution in graph
+    await this.storeExecutionInGraph(executionId, userRequest, 'completed', result);
+
     // Print summary
     console.log('\n' + '='.repeat(80));
     console.log('📊 CHAIN EXECUTION SUMMARY');
     console.log('='.repeat(80));
+    console.log(`🆔 Execution ID: ${executionId}`);
     console.log(`\n⏱️  Total Duration: ${(totalDuration / 1000).toFixed(2)}s`);
     console.log(`🎫 Total Tokens: ${totalTokens.input + totalTokens.output}`);
     console.log(`   - Input: ${totalTokens.input}`);
@@ -342,14 +574,10 @@ Output in markdown format ready for worker execution.`;
     steps.forEach((step, i) => {
       console.log(`   ${i + 1}. ${step.agentName} (${step.agentRole}): ${step.duration}ms, ${step.toolCalls} tools`);
     });
-    console.log('\n' + '='.repeat(80) + '\n');
+    console.log(`\n💾 Execution tracked in graph: ${executionId}`);
+    console.log('='.repeat(80) + '\n');
 
-    return {
-      steps,
-      finalOutput: pmStep2Result.output,
-      totalTokens,
-      totalDuration,
-    };
+    return result;
   }
 }
 

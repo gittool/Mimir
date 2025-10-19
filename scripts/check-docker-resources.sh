@@ -3,6 +3,15 @@
 
 set -e
 
+# Detect Docker Compose command (V1 vs V2)
+if command -v docker-compose &> /dev/null; then
+  DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null 2>&1; then
+  DOCKER_COMPOSE="docker compose"
+else
+  DOCKER_COMPOSE="docker compose"  # Fallback to V2
+fi
+
 echo "🔍 Docker Resource Check"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -32,7 +41,7 @@ if docker ps --format "{{.Names}}" | grep -q "ollama_server"; then
   echo "   Memory: $OLLAMA_MEM"
 else
   echo "   Ollama: ❌ Not running"
-  echo "   Start with: docker-compose up -d ollama"
+  echo "   Start with: $DOCKER_COMPOSE up -d ollama"
 fi
 echo ""
 

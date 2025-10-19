@@ -19,12 +19,12 @@ The system uses **environment-based path detection** to work seamlessly in both 
 
 | Environment | Detection | Default Watch Path | Configuration |
 |-------------|-----------|-------------------|---------------|
-| **Docker Container** | `WORKSPACE_ROOT` env var exists | `/workspace/src` | Set in `docker-compose.yml` |
+| **Docker Container** | `WORKSPACE_ROOT` env var exists | `/workspace/src` | Set in `docker compose.yml` |
 | **Host Machine** | No `WORKSPACE_ROOT` | `$(pwd)/src` | Override with `WATCH_PATH` env var |
 
 ### Docker Configuration
 
-The `docker-compose.yml` bind mount configuration:
+The `docker compose.yml` bind mount configuration:
 
 ```yaml
 mcp-server:
@@ -66,7 +66,7 @@ docker exec mcp_server node setup-file-watch.js
 WATCH_PATH=/path/to/your/project/src node setup-file-watch.js
 ```
 
-**In Docker (change docker-compose.yml):**
+**In Docker (change docker compose.yml):**
 ```yaml
 mcp-server:
   volumes:
@@ -86,7 +86,7 @@ mcp-server:
 
 2. **Start Neo4j:**
    ```bash
-   docker-compose up -d neo4j
+   docker compose up -d neo4j
    ```
 
 3. **Set up file watching:**
@@ -108,7 +108,7 @@ mcp-server:
 
 2. **Start all services:**
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 3. **Set up file watching in container:**
@@ -152,8 +152,14 @@ const config = await configManager.createWatch({
   debounce_ms: 500,
   file_patterns: ['*.ts', '*.js', '*.json', '*.md', '*.py'], // Add Python
   ignore_patterns: ['*.test.ts', '*.spec.ts', 'node_modules/**', 'build/**', 'dist/**'],
-  generate_embeddings: false // Set true for Phase 2 semantic search
+  generate_embeddings: false // Controlled by MIMIR_EMBEDDINGS_ENABLED env var
 });
+```
+
+**For vector embeddings support**, see [Vector Embeddings Guide](./VECTOR_EMBEDDINGS_GUIDE.md) and set environment variables in `.env`:
+```bash
+MIMIR_FEATURE_VECTOR_EMBEDDINGS=true
+MIMIR_EMBEDDINGS_ENABLED=true
 ```
 
 ---
@@ -261,7 +267,7 @@ node setup-file-watch.js
 
 **Check mount:**
 ```bash
-docker-compose config | grep -A 10 volumes
+docker compose config | grep -A 10 volumes
 ```
 
 **Expected output:**
@@ -273,7 +279,7 @@ volumes:
 **Fix:** Set `HOST_WORKSPACE_ROOT` before starting:
 ```bash
 export HOST_WORKSPACE_ROOT=/your/projects/dir
-docker-compose up -d
+docker compose up -d
 ```
 
 ---
@@ -304,7 +310,7 @@ Add to your deployment automation:
 
 ```bash
 #!/bin/bash
-docker-compose up -d
+docker compose up -d
 sleep 5  # Wait for services
 docker exec mcp_server node setup-file-watch.js
 ```
@@ -376,21 +382,34 @@ Files are included in agent prompts, enabling them to:
 
 ## 🔄 Next Steps
 
-### Phase 2: Semantic Search (Coming Soon)
+### Vector Embeddings & Semantic Search (Available Now!)
 
-Enable vector embeddings for semantic file search:
+Enable vector embeddings for semantic file search via environment variables:
 
-```javascript
-const config = await configManager.createWatch({
-  // ...
-  generate_embeddings: true  // Enable semantic search
-});
+**Edit `.env`:**
+```bash
+MIMIR_FEATURE_VECTOR_EMBEDDINGS=true
+MIMIR_EMBEDDINGS_ENABLED=true
+MIMIR_EMBEDDINGS_MODEL=nomic-embed-text
 ```
 
-This will allow queries like:
+**Start with Ollama:**
+```bash
+docker compose --profile ollama up -d
+docker exec ollama_server ollama pull nomic-embed-text
+```
+
+**Re-index with embeddings:**
+```bash
+docker exec mcp_server node setup-watch.js
+```
+
+This enables queries like:
 - "Find files related to authentication"
 - "Which files implement graph operations?"
 - "Show me database connection code"
+
+**See [Vector Embeddings Guide](./VECTOR_EMBEDDINGS_GUIDE.md) for complete documentation.**
 
 ### Phase 3: Real-Time Updates
 

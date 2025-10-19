@@ -1,5 +1,5 @@
 {
-  "defaultProvider": "copilot",
+  "defaultProvider": "ollama",
   "providers": {
     "copilot": {
       "baseUrl": "http://localhost:4141/v1",
@@ -47,18 +47,18 @@
   },
   "agentDefaults": {
     "pm": {
-      "provider": "copilot",
-      "model": "gpt-4.1",
+      "provider": "ollama",
+      "model": "gpt-oss",
       "rationale": "PM agent benefits from larger context window for research"
     },
     "worker": {
-      "provider": "copilot",
-      "model": "gpt-4.1",
+      "provider": "ollama",
+      "model": "gpt-oss",
       "rationale": "Worker agent uses same model for consistency"
     },
     "qc": {
-      "provider": "copilot",
-      "model": "gpt-4.1",
+      "provider": "ollama",
+      "model": "gpt-oss",
       "rationale": "QC agent uses same model for validation"
     }
   }

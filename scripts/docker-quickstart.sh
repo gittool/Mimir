@@ -4,6 +4,17 @@
 
 set -e
 
+# Detect Docker Compose command (V1 vs V2)
+if command -v docker-compose &> /dev/null; then
+  DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null 2>&1; then
+  DOCKER_COMPOSE="docker compose"
+else
+  echo "❌ Docker Compose not found!"
+  echo "   Please install Docker Desktop or Docker Compose"
+  exit 1
+fi
+
 echo "🚀 Mimir Docker + Ollama Quick Start"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -16,7 +27,7 @@ echo ""
 
 # Step 1: Build and start services
 echo "📦 Step 1/4: Starting Docker services..."
-docker-compose up -d
+$DOCKER_COMPOSE up -d
 
 echo ""
 echo "⏳ Waiting for services to be healthy (this may take 60-90 seconds)..."
@@ -77,7 +88,7 @@ echo ""
 echo "📋 Step 3/4: Verifying configuration..."
 echo ""
 echo "Service Status:"
-docker-compose ps
+$DOCKER_COMPOSE ps
 echo ""
 
 echo "Ollama Models:"
@@ -108,11 +119,11 @@ echo "3. Check MCP server health:"
 echo "   curl http://localhost:3000/health"
 echo ""
 echo "4. View logs:"
-echo "   docker-compose logs -f mcp-server"
-echo "   docker-compose logs -f ollama"
+echo "   $DOCKER_COMPOSE logs -f mcp-server"
+echo "   $DOCKER_COMPOSE logs -f ollama"
 echo ""
 echo "5. Stop services:"
-echo "   docker-compose down"
+echo "   $DOCKER_COMPOSE down"
 echo ""
 echo "📚 Documentation:"
 echo "   docs/DOCKER_OLLAMA_SETUP.md"

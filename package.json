@@ -23,6 +23,7 @@
     "test": "npx vitest run",
     "test:coverage": "npx vitest run --coverage",
     "test:benchmark": "npx vitest run --config vitest.config.benchmark.ts",
+    "test:embeddings": "node scripts/test-embeddings.js",
     "watch": "node esbuild.config.js --watch",
     "start": "node build/index.js",
     "dev": "node esbuild.config.js && node build/index.js",

@@ -105,12 +105,12 @@ If you can't allocate 16GB, reduce the context window in `.mimir/llm-config.json
 
 1. **Restart Docker completely:**
    ```bash
-   docker-compose down
+   docker compose down
    docker system prune -f
    
    # Rebuild with consistent tag to avoid image clutter
    docker build . -t mimir
-   docker-compose up -d
+   docker compose up -d
    ```
 
 2. **Check actual memory allocation:**
@@ -138,11 +138,11 @@ If your local machine is resource-constrained:
 # On powerful machine (Linux server, workstation)
 ollama serve
 
-# In Mimir's .env or docker-compose.yml
+# In Mimir's .env or docker compose.yml
 OLLAMA_BASE_URL=http://your-server-ip:11434
 ```
 
-Then comment out the `ollama` service in `docker-compose.yml`.
+Then comment out the `ollama` service in `docker compose.yml`.
 
 ## System Recommendations
 
@@ -159,7 +159,7 @@ Always tag your Docker builds to avoid creating multiple unnamed images:
 ```bash
 # ✅ Good: Uses consistent tag
 docker build . -t mimir
-docker-compose up -d
+docker compose up -d
 
 # ❌ Bad: Creates unnamed/dangling images
 docker build .
@@ -183,7 +183,7 @@ docker images mimir --format "{{.ID}}" | tail -n +2 | xargs docker rmi
 ```bash
 # Rebuild and restart
 docker build . -t mimir
-docker-compose restart
+docker compose restart
 
 # Or
 npm run chain "your task here"

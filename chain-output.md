@@ -1,324 +1,432 @@
-### Phase 0: Comprehensive Discovery
-
-**Sub-steps:**
-1. Read the customer request and Ecko’s optimized specification.
-2. Count explicit requirements.
-3. Survey repository for relevant files and architecture.
-4. Identify gaps and implied needs.
-5. Map context sources for each required section.
-6. Plan atomic tasks and dependencies.
+Thank you for the detailed optimized specification and context. I will proceed according to the Claudette PM Agent methodology, following the required discovery and decomposition workflow.
 
 ---
 
-#### 1. Explicit Requirements Analysis
+# Phase 0: Comprehensive Discovery
 
-**Customer Request:**  
-"Explain the file indexing system architecture"
+### 1. Read Customer Request
+**Original User Request:**  
+> add authentication to this app for users
 
-**Ecko’s Optimized Specification:**  
-Requires a technical architecture explanation covering:
-- Overview (diagram/description)
-- Component breakdown (FileIndexer, FileWatchManager, GitignoreHandler, ContextManager, GraphManager)
-- Data flow
-- Real example
-- Key patterns/decisions
-- Limitations/extensibility
-- Verification checklist
+### 2. Count Explicit Requirements
+**From Ecko's optimized specification:**  
+- 10 explicit rules (see "MANDATORY RULES" above)
+- 9 success criteria
+- 3 endpoints to implement
+- 1 new directory structure
+- 1 test suite
+- 1 documentation update
 
-**Explicit Requirements Found:**  
-- 7 main content sections (Overview, Component Breakdown, Data Flow, Example, Patterns/Decisions, Limitations/Extensibility, Checklist)
-- 1 verification step (context assumptions)
-
-**Implied Needs:**  
-- Must reference actual code in 5 files.
-- Must verify context assumptions before writing.
-- Must target intermediate/expert developers.
-
-**Total Explicit Requirements:** 7  
-**Total Implied Requirements:** 3  
-**Total Scope:** 10 requirements
+**Found 10 explicit requirements. Analyzing repository state for context.**
 
 ---
 
-#### 2. Repository State Survey
+### 3. Survey Repository Structure & Existing Architecture
 
-**Relevant Files:**
-- `indexing/FileIndexer.ts` (main indexing logic)
-- `indexing/FileWatchManager.ts` (file system events)
-- `indexing/GitignoreHandler.ts` (.gitignore filtering)
-- `managers/ContextManager.ts` (context management)
-- `managers/GraphManager.ts` (graph management)
+**Key findings:**
+- Express + TypeScript app (confirmed in `package.json`)
+- No existing `auth` or `user` modules (confirmed in indexed files)
+- Main server: `http-server.ts`
+- Modular structure: `managers/`, `indexing/`, `orchestrator/`
+- No database; file-based storage appropriate
+- No Passport.js, bcrypt, or JWT dependencies yet
+- No authentication instructions in `orchestrator/README.md`
+- Docker and TypeScript build pipeline already set up
 
-**Existing Documentation:**  
-- `orchestrator/README.md` (general, not indexing-specific)
-- No dedicated architecture doc for indexing system.
-
-**Technology Stack:**  
-- Node.js, TypeScript
+**Repository uses Express (Node.js) and TypeScript, modular structure, no existing authentication. Analyzing gaps and implied needs next.**
 
 ---
 
-#### 3. Context Sources
+### 4. Identify Gaps & Implied Needs
 
-**For Each Section:**
-- Overview: All 5 files, README.md
-- Component Breakdown: Each file’s implementation
-- Data Flow: FileIndexer, FileWatchManager, GitignoreHandler
-- Example: Code snippets from FileIndexer, GraphManager
-- Patterns/Decisions: Comments in code, modular structure
-- Limitations/Extensibility: Code comments, TODOs, inferred from implementation
-- Checklist: Derived from above
+**Gaps:**
+- No user model or storage
+- No authentication endpoints
+- No password hashing or JWT logic
+- No Passport.js integration
+- No JWT secret management
+- No tests for authentication
+- No documentation for auth
 
----
-
-#### 4. Task Breakdown
-
-**Phases:**
-- Phase 1: Context Verification
-- Phase 2: Architecture Overview
-- Phase 3: Component Breakdown
-- Phase 4: Data Flow Explanation
-- Phase 5: Real Example
-- Phase 6: Patterns & Decisions
-- Phase 7: Limitations & Extensibility
-- Phase 8: Verification Checklist
-- Phase 9: Final Assembly & Review
+**Implied needs:**
+- Install and configure Passport.js, bcrypt, jsonwebtoken
+- Create `auth/` directory with modular files
+- Add `.env` for JWT secret
+- Update server to mount new routes
+- Add Jest tests for new endpoints
+- Update documentation
 
 ---
 
-## Task Breakdown & Execution Plan
+### 5. Detect Ambiguities
+
+**Ambiguities:**
+- Should user storage be upgradable to a database? (Assume yes, per spec)
+- Should registration allow duplicate usernames? (Best practice: no)
+- Should JWT expiry be configurable? (Best practice: yes, via env)
+- Should tests cover edge cases (e.g., duplicate registration, invalid tokens)? (Best practice: yes)
+
+**No major ambiguities remain due to Ecko's detailed spec. Proceeding with decomposition.**
 
 ---
 
-### **Phase 1: Context Verification**
+### 6. Count Total Scope
 
-**Task ID:** task-1.1  
-**Title:** Verify File Indexing System Context Assumptions  
-**Worker Role:**  
-Documentation engineer with TypeScript and Node.js expertise, experienced in codebase analysis, architecture documentation, and onboarding material creation. Understands modular design and file system APIs, familiar with Express and TypeScript conventions.
+- 10 explicit requirements (from Ecko)
+- 4 implied best practices (upgradeable storage, no duplicate usernames, configurable expiry, edge case tests)
+- 0 organizational constraints (no Confluence standards found for auth)
 
-**Prompt:**  
-- Read and summarize the purpose of each of the following files:
-  - `indexing/FileIndexer.ts`
-  - `indexing/FileWatchManager.ts`
-  - `indexing/GitignoreHandler.ts`
-  - `managers/ContextManager.ts`
-  - `managers/GraphManager.ts`
-- Confirm that each file matches its described role in the specification.
-- Note any discrepancies or missing functionality.
-
-**Dependencies:** None  
-**Estimated Duration:** 30 min  
-**Verification Criteria:**  
-- [ ] Each file’s main responsibility is confirmed.
-- [ ] Any mismatches or missing features are documented.
-- [ ] Output is a concise summary for each file.
+**Total scope: 14 requirements, 0 organizational constraints.**
 
 ---
 
-### **Phase 2: Architecture Overview**
+# Phase 1: Requirement-by-Requirement Decomposition
 
-**Task ID:** task-2.1  
-**Title:** Write High-Level Architecture Overview of File Indexing System  
-**Worker Role:**  
-Software architect with Node.js and TypeScript expertise, experienced in system design, technical writing, and diagramming. Understands modular architectures and file system event handling.
-
-**Prompt:**  
-- Using verified context, write a high-level overview of the file indexing system.
-- Include a diagram (Mermaid or textual) showing major components and their relationships.
-- Reference actual file/module names.
-
-**Dependencies:** task-1.1  
-**Estimated Duration:** 45 min  
-**Verification Criteria:**  
-- [ ] Overview covers all major components.
-- [ ] Diagram is present and accurate.
-- [ ] References to real files/modules.
+**Requirement 1/14: Install and configure authentication dependencies**  
+**Requirement 2/14: Create user model and file-based storage**  
+**Requirement 3/14: Implement Passport.js JWT strategy**  
+**Requirement 4/14: Add registration endpoint**  
+**Requirement 5/14: Add login endpoint**  
+**Requirement 6/14: Add protected `/auth/me` endpoint**  
+**Requirement 7/14: Hash passwords with bcrypt**  
+**Requirement 8/14: Store JWT secret in `.env`**  
+**Requirement 9/14: Integrate JWT middleware**  
+**Requirement 10/14: Modularize auth logic in `auth/` directory**  
+**Requirement 11/14: Update main server to mount auth router**  
+**Requirement 12/14: Add Jest tests for auth endpoints**  
+**Requirement 13/14: Update documentation**  
+**Requirement 14/14: Edge case handling (duplicate users, invalid tokens, etc.)**
 
 ---
 
-### **Phase 3: Component Breakdown**
+## Task Breakdown by Phase
 
-**Task ID:** task-3.1  
-**Title:** Document Responsibilities and Interactions of Major Components  
-**Worker Role:**  
-Technical writer with TypeScript and Node.js expertise, experienced in component documentation and onboarding guides. Understands modularization and dependency management.
+### **Phase 1: Setup & Dependencies**
 
-**Prompt:**  
-- For each component (FileIndexer, FileWatchManager, GitignoreHandler, ContextManager, GraphManager):
-  - Describe its responsibilities.
-  - Explain how it interacts with other components.
-  - Reference code examples or function signatures.
+#### Task 1.1: Install Authentication Dependencies
 
-**Dependencies:** task-2.1  
-**Estimated Duration:** 60 min  
-**Verification Criteria:**  
-- [ ] Each component is described in detail.
-- [ ] Interactions are clearly explained.
-- [ ] Code references are accurate.
-
----
-
-### **Phase 4: Data Flow Explanation**
-
-**Task ID:** task-4.1  
-**Title:** Explain Data Flow from File Discovery to Indexing  
-**Worker Role:**  
-System analyst with Node.js and TypeScript expertise, experienced in data flow documentation and event-driven architectures. Understands file system APIs and observer patterns.
-
-**Prompt:**  
-- Trace the flow of a file from discovery (e.g., new file added) through filtering, indexing, and graph/context update.
-- Reference specific functions/methods in the code.
-- Highlight how changes are propagated.
-
-**Dependencies:** task-3.1  
-**Estimated Duration:** 45 min  
-**Verification Criteria:**  
-- [ ] Data flow is clearly explained.
-- [ ] References to code are present.
-- [ ] Change propagation is described.
+- **Task ID:** task-1.1
+- **Title:** Install Passport.js, bcrypt, and jsonwebtoken for authentication
+- **Worker Role:**  
+  DevOps/Backend engineer with Node.js and TypeScript expertise, experienced in dependency management, authentication libraries, and Express middleware integration. Understands npm/yarn workflows and security best practices.
+- **Prompt:**  
+  Install `passport`, `passport-jwt`, `bcrypt`, and `jsonwebtoken` as dependencies. Update `package.json` and ensure TypeScript types are installed (`@types/passport`, etc.).  
+- **Dependencies:** None
+- **Estimated Duration:** 15 min
+- **Verification Criteria:**  
+  - [ ] All packages listed in `package.json`
+  - [ ] `npm install` completes without errors
+  - [ ] TypeScript types present for all new packages
 
 ---
 
-### **Phase 5: Real Example**
+#### Task 1.2: Create `.env` for JWT Secret
 
-**Task ID:** task-5.1  
-**Title:** Provide Concrete Example of File Indexing and Graph Update  
-**Worker Role:**  
-Documentation engineer with TypeScript and Node.js expertise, experienced in example-driven documentation and onboarding. Understands file system event handling and graph data structures.
-
-**Prompt:**  
-- Walk through a real example: a new file is added to the project.
-- Show how it is discovered, filtered, indexed, and added to the graph/context.
-- Use code snippets and step-by-step explanation.
-
-**Dependencies:** task-4.1  
-**Estimated Duration:** 45 min  
-**Verification Criteria:**  
-- [ ] Example is realistic and complete.
-- [ ] Code snippets are accurate.
-- [ ] All steps are covered.
+- **Task ID:** task-1.2
+- **Title:** Create `.env` file and configure JWT secret management
+- **Worker Role:**  
+  Backend engineer with Node.js and environment configuration expertise, experienced in secure secret management and dotenv integration.
+- **Prompt:**  
+  Create a `.env` file at project root with a `JWT_SECRET` variable. Update server config to load this secret using `dotenv`.  
+- **Dependencies:** None
+- **Estimated Duration:** 10 min
+- **Verification Criteria:**  
+  - [ ] `.env` file exists with `JWT_SECRET`
+  - [ ] Server loads secret from environment (not hardcoded)
+  - [ ] Secret not committed to version control
 
 ---
 
-### **Phase 6: Patterns & Design Decisions**
+### **Phase 2: User Model & Storage**
 
-**Task ID:** task-6.1  
-**Title:** Highlight Key Architectural Patterns and Design Decisions  
-**Worker Role:**  
-Software architect with Node.js and TypeScript expertise, experienced in design pattern analysis and technical documentation. Understands observer, dependency injection, and modularization.
+#### Task 2.1: Implement User Model and File Storage
 
-**Prompt:**  
-- Identify and explain key patterns used (e.g., observer, modularization).
-- Discuss why certain design decisions were made (e.g., separate GitignoreHandler).
-- Reference code and comments where possible.
-
-**Dependencies:** task-5.1  
-**Estimated Duration:** 30 min  
-**Verification Criteria:**  
-- [ ] Patterns are identified and explained.
-- [ ] Design decisions are justified.
-- [ ] Code references are present.
-
----
-
-### **Phase 7: Limitations & Extensibility**
-
-**Task ID:** task-7.1  
-**Title:** Document Limitations and Extensibility Points of Indexing System  
-**Worker Role:**  
-Technical writer with Node.js and TypeScript expertise, experienced in system analysis and future-proofing documentation. Understands extensibility patterns and system limitations.
-
-**Prompt:**  
-- List current limitations (e.g., only local file system support).
-- Describe how the architecture supports future extension (e.g., remote file systems, plugin support).
-- Reference code comments or TODOs.
-
-**Dependencies:** task-6.1  
-**Estimated Duration:** 30 min  
-**Verification Criteria:**  
-- [ ] At least one limitation is listed.
-- [ ] At least one extensibility point is described.
-- [ ] References to code or comments are present.
+- **Task ID:** task-2.1
+- **Title:** Create TypeScript user model and file-based storage in `auth/userModel.ts`
+- **Worker Role:**  
+  Backend engineer with TypeScript and file I/O expertise, experienced in data modeling and secure storage patterns.
+- **Prompt:**  
+  Implement a `User` interface and storage logic in `auth/userModel.ts`. Store users in `data/users.json` with fields: `id`, `username`, `passwordHash`, `createdAt`.  
+- **Dependencies:** task-1.1
+- **Estimated Duration:** 30 min
+- **Verification Criteria:**  
+  - [ ] `User` interface defined
+  - [ ] File read/write logic implemented
+  - [ ] No plaintext passwords stored
+  - [ ] Handles user creation and lookup
 
 ---
 
-### **Phase 8: Verification Checklist**
+### **Phase 3: Authentication Logic**
 
-**Task ID:** task-8.1  
-**Title:** Create Reader Verification Checklist for Indexing System Architecture  
-**Worker Role:**  
-Documentation engineer with onboarding expertise, experienced in checklist creation and self-assessment guides. Understands technical documentation best practices.
+#### Task 3.1: Configure Passport.js with JWT Strategy
 
-**Prompt:**  
-- Create a checklist for readers to verify their understanding:
-  - Identify each major component and its role
-  - Trace the flow of a file from discovery to indexing
-  - Explain how .gitignore filtering is applied
-  - Describe how file changes are handled
-  - List at least one limitation and one extensibility point
-
-**Dependencies:** task-7.1  
-**Estimated Duration:** 15 min  
-**Verification Criteria:**  
-- [ ] Checklist covers all required points.
-- [ ] Items are clear and actionable.
+- **Task ID:** task-3.1
+- **Title:** Configure Passport.js JWT strategy in `auth/passport.ts`
+- **Worker Role:**  
+  Backend security engineer with Passport.js and JWT expertise, experienced in authentication flows and middleware configuration.
+- **Prompt:**  
+  Set up Passport.js with JWT strategy in `auth/passport.ts`. Use JWT secret from environment.  
+- **Dependencies:** task-1.1, task-1.2, task-2.1
+- **Estimated Duration:** 30 min
+- **Verification Criteria:**  
+  - [ ] Passport.js configured with JWT strategy
+  - [ ] Uses secret from `.env`
+  - [ ] Validates JWT and attaches user to request
 
 ---
 
-### **Phase 9: Final Assembly & Review**
+#### Task 3.2: Implement Password Hashing with bcrypt
 
-**Task ID:** task-9.1  
-**Title:** Assemble and Review Complete File Indexing System Architecture Document  
-**Worker Role:**  
-Senior technical writer with Node.js and TypeScript expertise, experienced in assembling technical documentation and peer review. Understands architecture documentation standards.
-
-**Prompt:**  
-- Assemble all previous sections into a single, well-structured markdown document.
-- Review for completeness, clarity, and technical accuracy.
-- Ensure all references are to real files/components.
-- Target intermediate to expert developers.
-
-**Dependencies:** task-8.1  
-**Estimated Duration:** 30 min  
-**Verification Criteria:**  
-- [ ] All sections are present and complete.
-- [ ] Document is clear and technically accurate.
-- [ ] No placeholders; all references are real.
+- **Task ID:** task-3.2
+- **Title:** Implement bcrypt password hashing in user registration
+- **Worker Role:**  
+  Backend engineer with bcrypt and authentication expertise, experienced in secure password storage and validation.
+- **Prompt:**  
+  Use bcrypt to hash passwords before storing in `users.json`. Validate passwords on login.  
+- **Dependencies:** task-1.1, task-2.1
+- **Estimated Duration:** 20 min
+- **Verification Criteria:**  
+  - [ ] Passwords hashed with bcrypt (cost ≥ 10)
+  - [ ] No plaintext passwords stored
+  - [ ] Password validation works on login
 
 ---
 
-## Dependency Graph
+### **Phase 4: Auth Endpoints**
+
+#### Task 4.1: Implement Registration Endpoint
+
+- **Task ID:** task-4.1
+- **Title:** Add `POST /auth/register` endpoint in `auth/routes.ts`
+- **Worker Role:**  
+  Backend engineer with Express and REST API expertise, experienced in route design and input validation.
+- **Prompt:**  
+  Implement `POST /auth/register` to create new users. Validate input, hash password, prevent duplicate usernames.  
+- **Dependencies:** task-2.1, task-3.2
+- **Estimated Duration:** 30 min
+- **Verification Criteria:**  
+  - [ ] Registers new user with hashed password
+  - [ ] Returns error on duplicate username
+  - [ ] Stores user in `users.json`
+
+---
+
+#### Task 4.2: Implement Login Endpoint
+
+- **Task ID:** task-4.2
+- **Title:** Add `POST /auth/login` endpoint in `auth/routes.ts`
+- **Worker Role:**  
+  Backend engineer with Express and JWT expertise, experienced in authentication flows and token issuance.
+- **Prompt:**  
+  Implement `POST /auth/login` to authenticate user and return JWT on valid credentials.  
+- **Dependencies:** task-2.1, task-3.2, task-3.1
+- **Estimated Duration:** 30 min
+- **Verification Criteria:**  
+  - [ ] Authenticates user with bcrypt
+  - [ ] Issues JWT on success
+  - [ ] Returns error on invalid credentials
+
+---
+
+#### Task 4.3: Implement Protected `/auth/me` Endpoint
+
+- **Task ID:** task-4.3
+- **Title:** Add `GET /auth/me` protected endpoint in `auth/routes.ts`
+- **Worker Role:**  
+  Backend engineer with Express and Passport.js expertise, experienced in protected route design.
+- **Prompt:**  
+  Implement `GET /auth/me` to return current user info. Protect with JWT middleware.  
+- **Dependencies:** task-3.1, task-4.2
+- **Estimated Duration:** 20 min
+- **Verification Criteria:**  
+  - [ ] Returns user info for valid JWT
+  - [ ] Returns 401 for missing/invalid JWT
+
+---
+
+### **Phase 5: Integration & Middleware**
+
+#### Task 5.1: Integrate Auth Router in Main Server
+
+- **Task ID:** task-5.1
+- **Title:** Mount `auth/routes.ts` in `http-server.ts`
+- **Worker Role:**  
+  Backend engineer with Express expertise, experienced in modular route integration.
+- **Prompt:**  
+  Import and mount the auth router in the main Express server (`http-server.ts`) under `/auth`.  
+- **Dependencies:** task-4.1, task-4.2, task-4.3
+- **Estimated Duration:** 10 min
+- **Verification Criteria:**  
+  - [ ] `/auth` endpoints available on server
+  - [ ] No route conflicts or errors
+
+---
+
+### **Phase 6: Testing**
+
+#### Task 6.1: Add Jest Tests for Auth Endpoints
+
+- **Task ID:** task-6.1
+- **Title:** Add Jest tests for registration, login, and protected route
+- **Worker Role:**  
+  QA engineer with Jest and API testing expertise, experienced in authentication and edge case testing.
+- **Prompt:**  
+  Write tests for registration, login, and `/auth/me` endpoints. Cover success, failure, and edge cases (duplicate user, invalid token, etc.).  
+- **Dependencies:** task-5.1
+- **Estimated Duration:** 45 min
+- **Verification Criteria:**  
+  - [ ] Tests for all endpoints
+  - [ ] Edge cases covered
+  - [ ] Tests pass in CI
+
+---
+
+### **Phase 7: Documentation**
+
+#### Task 7.1: Update Documentation
+
+- **Task ID:** task-7.1
+- **Title:** Update `orchestrator/README.md` with authentication usage and setup
+- **Worker Role:**  
+  Technical writer with Express and authentication expertise, experienced in developer documentation.
+- **Prompt:**  
+  Document new endpoints, usage examples, and environment variable setup in `orchestrator/README.md`.  
+- **Dependencies:** task-5.1, task-6.1
+- **Estimated Duration:** 20 min
+- **Verification Criteria:**  
+  - [ ] All endpoints documented
+  - [ ] Setup instructions clear
+  - [ ] JWT secret and `.env` usage explained
+
+---
+
+### **Phase 8: Edge Case Handling**
+
+#### Task 8.1: Implement and Test Edge Cases
+
+- **Task ID:** task-8.1
+- **Title:** Handle and test edge cases (duplicate registration, invalid tokens, etc.)
+- **Worker Role:**  
+  Backend/QA engineer with authentication and error handling expertise, experienced in robust API design.
+- **Prompt:**  
+  Ensure duplicate usernames are rejected, invalid/expired JWTs are handled, and error messages are secure. Add tests for these cases.  
+- **Dependencies:** task-6.1
+- **Estimated Duration:** 20 min
+- **Verification Criteria:**  
+  - [ ] Duplicate registration returns error
+  - [ ] Invalid/expired JWT returns 401
+  - [ ] No sensitive info leaked in errors
+
+---
+
+# Phase 2: Dependency Mapping
+
+**Dependency Graph:**
 
 ```mermaid
 graph TD
   task-1.1 --> task-2.1
+  task-1.2 --> task-3.1
   task-2.1 --> task-3.1
-  task-3.1 --> task-4.1
+  task-2.1 --> task-3.2
+  task-3.1 --> task-4.2
+  task-3.2 --> task-4.1
+  task-3.2 --> task-4.2
   task-4.1 --> task-5.1
+  task-4.2 --> task-4.3
+  task-4.2 --> task-5.1
+  task-4.3 --> task-5.1
   task-5.1 --> task-6.1
   task-6.1 --> task-7.1
-  task-7.1 --> task-8.1
-  task-8.1 --> task-9.1
+  task-6.1 --> task-8.1
 ```
 
 ---
 
-## Context Sources
+# Phase 3: Handoff Package
 
-- `indexing/FileIndexer.ts`
-- `indexing/FileWatchManager.ts`
-- `indexing/GitignoreHandler.ts`
-- `managers/ContextManager.ts`
-- `managers/GraphManager.ts`
-- `orchestrator/README.md` (for general context)
-- Code comments and function signatures
+## Task Table
+
+| Task ID   | Title                                               | Dependencies         | Est. Duration |
+|-----------|-----------------------------------------------------|----------------------|---------------|
+| task-1.1  | Install Passport.js, bcrypt, jsonwebtoken           | None                 | 15 min        |
+| task-1.2  | Create `.env` for JWT secret                        | None                 | 10 min        |
+| task-2.1  | User model and file storage                         | task-1.1             | 30 min        |
+| task-3.1  | Passport.js JWT strategy                            | task-1.1,1.2,2.1     | 30 min        |
+| task-3.2  | Password hashing with bcrypt                        | task-1.1,2.1         | 20 min        |
+| task-4.1  | Registration endpoint                               | task-2.1,3.2         | 30 min        |
+| task-4.2  | Login endpoint                                      | task-2.1,3.2,3.1     | 30 min        |
+| task-4.3  | Protected `/auth/me` endpoint                       | task-3.1,4.2         | 20 min        |
+| task-5.1  | Integrate auth router in main server                | task-4.1,4.2,4.3     | 10 min        |
+| task-6.1  | Jest tests for auth endpoints                       | task-5.1             | 45 min        |
+| task-7.1  | Update documentation                                | task-5.1,6.1         | 20 min        |
+| task-8.1  | Edge case handling and tests                        | task-6.1             | 20 min        |
 
 ---
 
-## Summary
+# Phase 4: Context Sources
 
-**Total Tasks:** 9  
-**All requirements from Ecko’s specification are covered.**  
-**Each task is atomic, with clear context, dependencies, and verification criteria.**  
-**Ready for worker agent execution.**
+**For all tasks, context sources include:**
+- `package.json` (dependencies)
+- `http-server.ts` (main server)
+- `orchestrator/README.md` (docs)
+- `auth/` directory (to be created)
+- `data/users.json` (to be created)
+- `.env` (to be created)
+- Official docs: [Passport.js](http://www.passportjs.org/), [bcrypt](https://www.npmjs.com/package/bcrypt), [jsonwebtoken](https://www.npmjs.com/package/jsonwebtoken)
+- Jest test files (for testing)
+
+---
+
+# Phase 5: Worker & QC Agent Roles
+
+**Worker roles and QC roles are specified per task above.**  
+**QC agents for all tasks:**  
+- Senior security/code reviewer with expertise in authentication, Express, and TypeScript. Aggressively verifies security, functionality, and code quality per OWASP, JWT RFC, and Node.js best practices.
+
+---
+
+# Phase 6: Verification Criteria
+
+**Each task includes specific, measurable verification criteria.**  
+**All endpoints, tests, and docs must be present and verified.**
+
+---
+
+# Phase 7: Edge Cases
+
+**Edge cases to be handled:**
+- Duplicate username registration
+- Invalid/expired JWTs
+- Missing JWT secret
+- File I/O errors in user storage
+- Password hash verification failures
+
+---
+
+# Phase 8: Execution Order
+
+**Recommended order:**  
+1. task-1.1, task-1.2  
+2. task-2.1  
+3. task-3.1, task-3.2  
+4. task-4.1, task-4.2, task-4.3  
+5. task-5.1  
+6. task-6.1  
+7. task-7.1, task-8.1
+
+---
+
+# Phase 9: Completion Criteria
+
+- All 14 requirements decomposed into 12 atomic tasks
+- Each task has context, dependencies, acceptance/verification criteria, and edge cases
+- Dependency graph mapped
+- Handoff package ready for worker agents
+
+---
+
+**All requirements decomposed. 12 actionable tasks ready for worker agents.**  
+**No past failures detected.**  
+**Ready for implementation.**

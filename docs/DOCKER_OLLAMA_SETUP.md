@@ -44,36 +44,56 @@ The Docker Compose setup includes three services:
 docker build . -t mimir
 
 # Start all services (Neo4j, Ollama, MCP server)
-docker-compose up -d
+docker compose up -d
 
 # Check status
-docker-compose ps
+docker compose ps
 ```
 
 **Important**: Always use `-t mimir` when building manually to avoid creating multiple unnamed images.
 
-**Alternative** (docker-compose handles tagging automatically):
+**Alternative** (docker compose handles tagging automatically):
 ```bash
-docker-compose build
-docker-compose up -d
+docker compose build
+docker compose up -d
 ```
 
 ### 2. Pull Ollama Models
 
-The quickstart script automatically pulls the default models. To pull additional models:
+The setup script **intelligently pulls only the models you need**:
 
-**Using the helper script (recommended):**
+**Automatic model detection:**
 ```bash
-# Pull a specific model
-./scripts/pull-model.sh qwen2.5-coder:7b
-
-# Examples
-./scripts/pull-model.sh llama3.1:8b
-./scripts/pull-model.sh deepseek-r1:8b
+./scripts/setup-ollama-models.sh
 ```
 
-**Manual pull:**
+This script will:
+- ✅ Pull **agent models** (qwen3:8b, qwen2.5-coder:1.5b-base) **only if** `defaultProvider: "ollama"` in `.mimir/llm-config.json`
+- ✅ Pull **embedding model** (e.g., nomic-embed-text) **only if** `MIMIR_EMBEDDINGS_ENABLED=true` in `.env`
+- ℹ️  Skip unnecessary models if you're using a different provider (e.g., Copilot)
+
+**Example output when Ollama is NOT the agent provider:**
+```
+ℹ️  No Ollama models needed
+
+Current configuration:
+   Default provider: copilot
+   Vector embeddings: false
+
+Ollama is available but not currently configured for:
+   - Agent execution (using copilot instead)
+   - Vector embeddings (not enabled)
+```
+
+**To pull additional models manually:**
+
 ```bash
+# Using the helper script (recommended)
+./scripts/pull-model.sh qwen2.5-coder:7b
+./scripts/pull-model.sh llama3.1:8b
+./scripts/pull-model.sh deepseek-r1:8b
+
+# Or directly
 docker exec ollama_server ollama pull qwen2.5-coder:7b
 docker exec ollama_server ollama pull llama3.1:8b
 ```
@@ -100,7 +120,7 @@ open http://localhost:7474
 
 ### Environment Variables
 
-The `docker-compose.yml` automatically sets:
+The `docker compose.yml` automatically sets:
 - `OLLAMA_BASE_URL=http://ollama:11434` - MCP server uses containerized Ollama
 - `NEO4J_URI=bolt://neo4j:7687` - MCP server uses containerized Neo4j
 
@@ -138,7 +158,7 @@ To enable GPU acceleration for Ollama (NVIDIA GPUs only):
 
 1. Install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
 
-2. Uncomment the GPU section in `docker-compose.yml`:
+2. Uncomment the GPU section in `docker compose.yml`:
 
 ```yaml
 ollama:
@@ -154,7 +174,7 @@ ollama:
 3. Restart Ollama:
 
 ```bash
-docker-compose up -d --force-recreate ollama
+docker compose up -d --force-recreate ollama
 ```
 
 ## Data Persistence
@@ -183,7 +203,7 @@ error loading llama server
 **Solution:**
 1. **Increase Docker memory to 16 GB** - See [DOCKER_RESOURCES.md](DOCKER_RESOURCES.md)
 2. Restart Docker Desktop completely
-3. Restart services: `docker-compose restart`
+3. Restart services: `docker compose restart`
 
 **Quick check:**
 ```bash
@@ -227,14 +247,14 @@ docker logs ollama_server --tail 50
 **Fix permission issues:**
 ```bash
 # Stop services
-docker-compose down
+docker compose down
 
 # Fix permissions
 rm -rf ./data/ollama
 mkdir -p ./data/ollama
 
 # Restart
-docker-compose up -d
+docker compose up -d
 ./scripts/setup-ollama-models.sh
 ```
 
@@ -286,7 +306,7 @@ If developing locally without Docker:
 
 ```bash
 # Start only Neo4j in Docker
-docker-compose up -d neo4j
+docker compose up -d neo4j
 
 # Run MCP server locally (uses localhost Ollama)
 npm run build
@@ -299,7 +319,7 @@ Use containerized Neo4j and Ollama, but run MCP server locally for faster iterat
 
 ```bash
 # Start Neo4j and Ollama
-docker-compose up -d neo4j ollama
+docker compose up -d neo4j ollama
 
 # Set environment variable to use Docker Ollama
 export OLLAMA_BASE_URL=http://localhost:11434
@@ -314,13 +334,13 @@ node build/http-server.js
 
 ```bash
 # Stop all services (keeps data)
-docker-compose down
+docker compose down
 
 # Stop and remove volumes (DELETES ALL DATA)
-docker-compose down -v
+docker compose down -v
 
 # Stop specific service
-docker-compose stop ollama
+docker compose stop ollama
 ```
 
 ## Model Recommendations

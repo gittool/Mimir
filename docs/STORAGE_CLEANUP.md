@@ -25,7 +25,7 @@ du -sh ./data/ollama
 **To clean up:**
 ```bash
 # Stop services first
-docker-compose down
+docker compose down
 
 # Remove all Ollama data (models + metadata)
 rm -rf ./data/ollama
@@ -83,13 +83,13 @@ du -sh ./data/neo4j
 **To clean up:**
 ```bash
 # Stop services first
-docker-compose down
+docker compose down
 
 # Remove all graph data (⚠️ DELETES ALL YOUR TODOS/KNOWLEDGE GRAPH)
 rm -rf ./data/neo4j
 
-# Or remove with docker-compose
-docker-compose down -v  # Removes named volumes too
+# Or remove with docker compose
+docker compose down -v  # Removes named volumes too
 ```
 
 ---
@@ -164,10 +164,10 @@ rm -rf ./logs
 Removes only Neo4j data and logs:
 
 ```bash
-docker-compose down
+docker compose down
 rm -rf ./data/neo4j
 rm -rf ./logs
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Medium Cleanup (Remove Docker Models Only)
@@ -175,11 +175,11 @@ docker-compose up -d
 Removes Docker Ollama models but keeps host models:
 
 ```bash
-docker-compose down
+docker compose down
 rm -rf ./data/ollama
 rm -rf ./data/neo4j
 rm -rf ./logs
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Full Cleanup (Everything)
@@ -188,7 +188,7 @@ docker-compose up -d
 
 ```bash
 # Stop and remove containers
-docker-compose down -v
+docker compose down -v
 
 # Remove all local data
 rm -rf ./data
@@ -310,7 +310,7 @@ If you're completely out of disk space:
 
 ```bash
 # 1. Stop all services immediately
-docker-compose down
+docker compose down
 
 # 2. Remove Docker Ollama models (largest culprit)
 rm -rf ./data/ollama
@@ -322,7 +322,7 @@ docker system prune -a --volumes
 rm -rf ~/.ollama
 
 # 5. Restart with minimal setup
-docker-compose up -d
+docker compose up -d
 ```
 
 This should recover 10-50GB depending on how many models were installed.
