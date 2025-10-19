@@ -9,6 +9,7 @@ coverage/
 validation-output/
 generated-agents/tmp
 generated-agents/worker-*
+test-output-executor/
 .env
 data/
 logs/

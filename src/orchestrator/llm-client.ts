@@ -10,6 +10,8 @@ import { CopilotModel, LLMProvider } from './types.js';
 import { allTools, planningTools, getToolNames } from './tools.js';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { LLMConfigLoader } from '../config/LLMConfigLoader.js';
+import { RateLimitQueue } from './rate-limit-queue.js';
+import { loadRateLimitConfig } from '../config/rate-limit-config.js';
 
 
 export interface AgentConfig {
@@ -62,6 +64,9 @@ export class CopilotAgentClient {
   private llmConfig: Record<string, any> = {};
   private configLoader: LLMConfigLoader;
   private agentConfig: AgentConfig; // Store for lazy initialization
+  
+  // Rate limiter (NEW)
+  private rateLimiter: RateLimitQueue;
 
   constructor(config: AgentConfig) {
     // Use custom tools if provided, otherwise default to allTools
@@ -82,6 +87,11 @@ export class CopilotAgentClient {
     
     // Load config loader (synchronous singleton access)
     this.configLoader = LLMConfigLoader.getInstance();
+    
+    // Initialize rate limiter with provider-specific config
+    const providerName = config.provider?.toString().toLowerCase() || 'ollama';
+    const rateLimitConfig = loadRateLimitConfig(providerName);
+    this.rateLimiter = RateLimitQueue.getInstance(rateLimitConfig);
     
     console.log(`🔧 Tools available (${this.tools.length}): ${this.tools.map(t => t.name).slice(0, 10).join(', ')}${this.tools.length > 10 ? '...' : ''}`);
   }
@@ -479,6 +489,42 @@ CONCISE SUMMARY:`;
       duration: number;
     };
   }> {
+    // Conservative estimate: 1 base request + assume some tool calls
+    // Will be updated with actual count after execution
+    const estimatedRequests = 1 + Math.min(this.tools.length, 10); // Assume up to 10 tool calls
+    
+    // Wrap execution with rate limiter
+    return this.rateLimiter.enqueue(
+      async () => {
+        const result = await this.executeInternal(task, retryCount);
+        
+        // Record actual API usage after execution
+        this.recordAPIUsageMetrics(result);
+        
+        return result;
+      },
+      estimatedRequests
+    );
+  }
+  
+  /**
+   * Internal execution method (rate-limited by enqueue wrapper)
+   */
+  private async executeInternal(task: string, retryCount: number = 0): Promise<{
+    output: string;
+    conversationHistory: Array<{ role: string; content: string }>;
+    tokens: { input: number; output: number };
+    toolCalls: number;
+    intermediateSteps: any[];
+    metadata?: {
+      toolCallCount: number;
+      messageCount: number;
+      estimatedContextTokens: number;
+      qcRecommended: boolean;
+      circuitBreakerTriggered: boolean;
+      duration: number;
+    };
+  }> {
     if (!this.agent) {
       throw new Error('Agent not initialized. Call loadPreamble() first.');
     }
@@ -614,7 +660,7 @@ CONCISE SUMMARY:`;
 
 **IMPORTANT**: If using tools, ensure JSON is valid. Keep tool arguments simple and well-formatted.`;
         
-        return await this.execute(retryTask, retryCount + 1);
+        return await this.executeInternal(retryTask, retryCount + 1);
       }
       
       // If not a tool call error or max retries exceeded, provide helpful error message
@@ -650,6 +696,30 @@ CONCISE SUMMARY:`;
   private estimateTokens(text: string): number {
     // Rough estimate: 1 token ≈ 4 characters
     return Math.ceil(text.length / 4);
+  }
+  
+  /**
+   * Record actual API usage metrics after execution completes.
+   * Counts AIMessage objects to determine actual API requests made.
+   * 
+   * Note: Each agent node execution = 1 API request in LangGraph.
+   * We count AIMessages because each one represents an agent node execution.
+   */
+  private recordAPIUsageMetrics(result: {
+    toolCalls: number;
+    intermediateSteps: any[];
+  }): void {
+    // Count actual API requests (each AIMessage = 1 request)
+    const actualRequests = result.intermediateSteps.filter(
+      (msg: any) => msg._getType() === 'ai'
+    ).length;
+    
+    // Log discrepancy for monitoring
+    if (actualRequests > 0) {
+      const metrics = this.rateLimiter.getMetrics();
+      console.log(`📊 API Usage: ${actualRequests} requests, ${result.toolCalls} tool calls`);
+      console.log(`📊 Rate Limit: ${metrics.requestsInCurrentHour}/${metrics.requestsInCurrentHour + metrics.remainingCapacity} (${metrics.usagePercent.toFixed(1)}%)`);
+    }
   }
 }
 

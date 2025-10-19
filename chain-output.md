@@ -1,432 +1,354 @@
-Thank you for the detailed optimized specification and context. I will proceed according to the Claudette PM Agent methodology, following the required discovery and decomposition workflow.
+Thank you for your thorough and clear request! I’ll proceed step-by-step, narrating my analysis and planning as I go.
 
 ---
 
-# Phase 0: Comprehensive Discovery
+## Phase 0: Comprehensive Discovery
 
-### 1. Read Customer Request
-**Original User Request:**  
-> add authentication to this app for users
-
-### 2. Count Explicit Requirements
-**From Ecko's optimized specification:**  
-- 10 explicit rules (see "MANDATORY RULES" above)
-- 9 success criteria
-- 3 endpoints to implement
-- 1 new directory structure
-- 1 test suite
-- 1 documentation update
-
-**Found 10 explicit requirements. Analyzing repository state for context.**
+### Sub-steps:
+1. **Extract explicit requirements from the user request and Ecko’s optimized specification.**
+2. **Survey repository for all Markdown (*.md) files.**
+3. **Check for README.md and other key documentation files.**
+4. **Review knowledge graph for past documentation consolidation attempts or failures.**
+5. **Identify gaps, ambiguities, and implied needs.**
+6. **Summarize context and constraints.**
 
 ---
 
-### 3. Survey Repository Structure & Existing Architecture
+### 1. Explicit Requirements Extraction
 
-**Key findings:**
-- Express + TypeScript app (confirmed in `package.json`)
-- No existing `auth` or `user` modules (confirmed in indexed files)
-- Main server: `http-server.ts`
-- Modular structure: `managers/`, `indexing/`, `orchestrator/`
-- No database; file-based storage appropriate
-- No Passport.js, bcrypt, or JWT dependencies yet
-- No authentication instructions in `orchestrator/README.md`
-- Docker and TypeScript build pipeline already set up
+**User Request:**  
+> "read and consolidate all of the documentation *.md files in this repo into a more organized structure"
 
-**Repository uses Express (Node.js) and TypeScript, modular structure, no existing authentication. Analyzing gaps and implied needs next.**
+**Ecko’s Optimized Specification:**  
+- Consolidate all Markdown (*.md) documentation into a single, organized master document.
+- Verify all *.md files and their content.
+- Confirm README.md presence.
+- Organize by topic/purpose.
+- Remove duplication, preserve detail.
+- Maintain original authoritative content.
+- Add Table of Contents.
+- Use consistent formatting.
+- Document file sources for each section.
+- Don’t stop until all *.md files are included.
+- Add verification checklist.
+
+**Explicit Requirements Count:**  
+**Found 9 explicit requirements. Analyzing repository state for context.**
 
 ---
 
-### 4. Identify Gaps & Implied Needs
+### 2. Survey Repository for Markdown Files
+
+#### Sub-steps:
+- List all *.md files in root and subdirectories (e.g., docs/, .agents/, etc.).
+- Confirm README.md presence.
+- Note unknown file names/locations (to be discovered).
+
+---
+
+### 3. Check Knowledge Graph for Past Attempts/Failures
+
+- No prior consolidation attempts or failures found.
+- No explicit documentation standards detected.
+
+---
+
+### 4. Identify Gaps, Ambiguities, Implied Needs
 
 **Gaps:**
-- No user model or storage
-- No authentication endpoints
-- No password hashing or JWT logic
-- No Passport.js integration
-- No JWT secret management
-- No tests for authentication
-- No documentation for auth
+- File names/locations are unknown.
+- No documentation structure or standards detected.
+- No advanced documentation tooling (manual consolidation required).
 
-**Implied needs:**
-- Install and configure Passport.js, bcrypt, jsonwebtoken
-- Create `auth/` directory with modular files
-- Add `.env` for JWT secret
-- Update server to mount new routes
-- Add Jest tests for new endpoints
-- Update documentation
-
----
-
-### 5. Detect Ambiguities
+**Implied Needs:**
+- Logical grouping by topic/purpose.
+- Consistent formatting and section headers.
+- Table of Contents with links.
+- Source notes for each section.
+- Conflict resolution if information differs.
 
 **Ambiguities:**
-- Should user storage be upgradable to a database? (Assume yes, per spec)
-- Should registration allow duplicate usernames? (Best practice: no)
-- Should JWT expiry be configurable? (Best practice: yes, via env)
-- Should tests cover edge cases (e.g., duplicate registration, invalid tokens)? (Best practice: yes)
-
-**No major ambiguities remain due to Ecko's detailed spec. Proceeding with decomposition.**
+- Unknown file names/locations.
+- Possible duplication or conflicting information.
 
 ---
 
-### 6. Count Total Scope
+### 5. Context Summary
 
-- 10 explicit requirements (from Ecko)
-- 4 implied best practices (upgradeable storage, no duplicate usernames, configurable expiry, edge case tests)
-- 0 organizational constraints (no Confluence standards found for auth)
-
-**Total scope: 14 requirements, 0 organizational constraints.**
-
----
-
-# Phase 1: Requirement-by-Requirement Decomposition
-
-**Requirement 1/14: Install and configure authentication dependencies**  
-**Requirement 2/14: Create user model and file-based storage**  
-**Requirement 3/14: Implement Passport.js JWT strategy**  
-**Requirement 4/14: Add registration endpoint**  
-**Requirement 5/14: Add login endpoint**  
-**Requirement 6/14: Add protected `/auth/me` endpoint**  
-**Requirement 7/14: Hash passwords with bcrypt**  
-**Requirement 8/14: Store JWT secret in `.env`**  
-**Requirement 9/14: Integrate JWT middleware**  
-**Requirement 10/14: Modularize auth logic in `auth/` directory**  
-**Requirement 11/14: Update main server to mount auth router**  
-**Requirement 12/14: Add Jest tests for auth endpoints**  
-**Requirement 13/14: Update documentation**  
-**Requirement 14/14: Edge case handling (duplicate users, invalid tokens, etc.)**
+- **Technology:** Markdown (.md)
+- **Files:** At least 3 Markdown files (names/locations unknown)
+- **Audience:** Contributors, maintainers
+- **Tooling:** Manual consolidation (no Docusaurus/MkDocs)
+- **Success Criteria:** All *.md files included, organized, verified, and documented.
 
 ---
 
-## Task Breakdown by Phase
+## Phase 1: Task Breakdown & Execution Plan
 
-### **Phase 1: Setup & Dependencies**
-
-#### Task 1.1: Install Authentication Dependencies
-
-- **Task ID:** task-1.1
-- **Title:** Install Passport.js, bcrypt, and jsonwebtoken for authentication
-- **Worker Role:**  
-  DevOps/Backend engineer with Node.js and TypeScript expertise, experienced in dependency management, authentication libraries, and Express middleware integration. Understands npm/yarn workflows and security best practices.
-- **Prompt:**  
-  Install `passport`, `passport-jwt`, `bcrypt`, and `jsonwebtoken` as dependencies. Update `package.json` and ensure TypeScript types are installed (`@types/passport`, etc.).  
-- **Dependencies:** None
-- **Estimated Duration:** 15 min
-- **Verification Criteria:**  
-  - [ ] All packages listed in `package.json`
-  - [ ] `npm install` completes without errors
-  - [ ] TypeScript types present for all new packages
+### **Phases:**
+1. **Discovery & Inventory**
+2. **Content Extraction**
+3. **Organization & Structuring**
+4. **Consolidation & Formatting**
+5. **Verification & Finalization**
 
 ---
 
-#### Task 1.2: Create `.env` for JWT Secret
+### **Task Breakdown Table**
 
-- **Task ID:** task-1.2
-- **Title:** Create `.env` file and configure JWT secret management
-- **Worker Role:**  
-  Backend engineer with Node.js and environment configuration expertise, experienced in secure secret management and dotenv integration.
-- **Prompt:**  
-  Create a `.env` file at project root with a `JWT_SECRET` variable. Update server config to load this secret using `dotenv`.  
-- **Dependencies:** None
-- **Estimated Duration:** 10 min
-- **Verification Criteria:**  
-  - [ ] `.env` file exists with `JWT_SECRET`
-  - [ ] Server loads secret from environment (not hardcoded)
-  - [ ] Secret not committed to version control
+| Task ID      | Title                                                        | Worker Role Description                                                                 | Dependencies         | Estimated Duration | Verification Criteria                                                                                  |
+|--------------|--------------------------------------------------------------|-----------------------------------------------------------------------------------------|----------------------|-------------------|-------------------------------------------------------------------------------------------------------|
+| task-1.1     | List and Inventory All Markdown Files in Repo                | Documentation analyst with repo structure expertise, experienced in file discovery and metadata extraction. | None                 | 10 min            | All *.md files listed with paths; README.md confirmed; no files missed.                               |
+| task-2.1     | Extract Content from Each Markdown File                      | Documentation analyst with Markdown parsing expertise, experienced in content extraction and metadata annotation. | task-1.1             | 20 min            | All content extracted; file sources noted; no content omitted.                                        |
+| task-3.1     | Analyze and Group Content by Topic and Purpose               | Documentation architect with technical writing and information architecture expertise, experienced in topic modeling and content organization. | task-2.1             | 20 min            | Logical sections identified; content grouped by topic/purpose; duplication/overlap flagged.           |
+| task-4.1     | Consolidate Content into Master Document with Consistent Formatting | Documentation architect with Markdown formatting and editorial expertise, experienced in consolidation and style harmonization. | task-3.1             | 30 min            | All content included; consistent formatting; section headers; Table of Contents present.              |
+| task-4.2     | Document File Sources for Each Section                       | Documentation analyst with metadata annotation expertise, experienced in source tracking and documentation. | task-4.1             | 10 min            | Each section notes original file(s); no missing source notes.                                         |
+| task-4.3     | Add "Conflicts" Section for Any Contradictory Information    | Documentation architect with editorial judgment, experienced in conflict resolution and annotation. | task-4.1             | 10 min            | All conflicts noted; sources referenced; no contradictions omitted.                                   |
+| task-5.1     | Add Verification Checklist to End of Document                | Documentation analyst with quality assurance expertise, experienced in checklist creation and documentation review. | task-4.2, task-4.3   | 10 min            | Checklist present; all criteria covered; links to sections verified.                                  |
+| task-5.2     | Final Review and Save as CONSOLIDATED_DOCUMENTATION.md       | Documentation architect with editorial and QA expertise, experienced in final review and file management. | task-5.1             | 10 min            | File saved as CONSOLIDATED_DOCUMENTATION.md; all requirements met; ready for use.                     |
 
 ---
 
-### **Phase 2: User Model & Storage**
-
-#### Task 2.1: Implement User Model and File Storage
-
-- **Task ID:** task-2.1
-- **Title:** Create TypeScript user model and file-based storage in `auth/userModel.ts`
-- **Worker Role:**  
-  Backend engineer with TypeScript and file I/O expertise, experienced in data modeling and secure storage patterns.
-- **Prompt:**  
-  Implement a `User` interface and storage logic in `auth/userModel.ts`. Store users in `data/users.json` with fields: `id`, `username`, `passwordHash`, `createdAt`.  
-- **Dependencies:** task-1.1
-- **Estimated Duration:** 30 min
-- **Verification Criteria:**  
-  - [ ] `User` interface defined
-  - [ ] File read/write logic implemented
-  - [ ] No plaintext passwords stored
-  - [ ] Handles user creation and lookup
+## Phase 2: Detailed Task Specifications
 
 ---
 
-### **Phase 3: Authentication Logic**
+### **task-1.1: List and Inventory All Markdown Files in Repo**
 
-#### Task 3.1: Configure Passport.js with JWT Strategy
+**Title:** List and Inventory All Markdown Files in Repo  
+**Worker Role:** Documentation analyst with repo structure expertise, experienced in file discovery and metadata extraction.  
+**Prompt:**  
+- List all Markdown (*.md) files in the repository, including README.md and any in subdirectories (e.g., docs/, .agents/).
+- Confirm the presence and path of README.md.
+- Output a table of file names and locations.
+- Note any files with ambiguous or duplicate names.
 
-- **Task ID:** task-3.1
-- **Title:** Configure Passport.js JWT strategy in `auth/passport.ts`
-- **Worker Role:**  
-  Backend security engineer with Passport.js and JWT expertise, experienced in authentication flows and middleware configuration.
-- **Prompt:**  
-  Set up Passport.js with JWT strategy in `auth/passport.ts`. Use JWT secret from environment.  
-- **Dependencies:** task-1.1, task-1.2, task-2.1
-- **Estimated Duration:** 30 min
-- **Verification Criteria:**  
-  - [ ] Passport.js configured with JWT strategy
-  - [ ] Uses secret from `.env`
-  - [ ] Validates JWT and attaches user to request
-
----
-
-#### Task 3.2: Implement Password Hashing with bcrypt
-
-- **Task ID:** task-3.2
-- **Title:** Implement bcrypt password hashing in user registration
-- **Worker Role:**  
-  Backend engineer with bcrypt and authentication expertise, experienced in secure password storage and validation.
-- **Prompt:**  
-  Use bcrypt to hash passwords before storing in `users.json`. Validate passwords on login.  
-- **Dependencies:** task-1.1, task-2.1
-- **Estimated Duration:** 20 min
-- **Verification Criteria:**  
-  - [ ] Passwords hashed with bcrypt (cost ≥ 10)
-  - [ ] No plaintext passwords stored
-  - [ ] Password validation works on login
+**Dependencies:** None  
+**Estimated Duration:** 10 min  
+**Verification Criteria:**  
+- [ ] All *.md files listed with full paths  
+- [ ] README.md confirmed  
+- [ ] No files missed (cross-check with directory listing)
 
 ---
 
-### **Phase 4: Auth Endpoints**
+### **task-2.1: Extract Content from Each Markdown File**
 
-#### Task 4.1: Implement Registration Endpoint
+**Title:** Extract Content from Each Markdown File  
+**Worker Role:** Documentation analyst with Markdown parsing expertise, experienced in content extraction and metadata annotation.  
+**Prompt:**  
+- Read and extract the full content of each Markdown file listed in task-1.1.
+- For each file, note its path and original filename.
+- Prepare content for grouping and consolidation.
 
-- **Task ID:** task-4.1
-- **Title:** Add `POST /auth/register` endpoint in `auth/routes.ts`
-- **Worker Role:**  
-  Backend engineer with Express and REST API expertise, experienced in route design and input validation.
-- **Prompt:**  
-  Implement `POST /auth/register` to create new users. Validate input, hash password, prevent duplicate usernames.  
-- **Dependencies:** task-2.1, task-3.2
-- **Estimated Duration:** 30 min
-- **Verification Criteria:**  
-  - [ ] Registers new user with hashed password
-  - [ ] Returns error on duplicate username
-  - [ ] Stores user in `users.json`
-
----
-
-#### Task 4.2: Implement Login Endpoint
-
-- **Task ID:** task-4.2
-- **Title:** Add `POST /auth/login` endpoint in `auth/routes.ts`
-- **Worker Role:**  
-  Backend engineer with Express and JWT expertise, experienced in authentication flows and token issuance.
-- **Prompt:**  
-  Implement `POST /auth/login` to authenticate user and return JWT on valid credentials.  
-- **Dependencies:** task-2.1, task-3.2, task-3.1
-- **Estimated Duration:** 30 min
-- **Verification Criteria:**  
-  - [ ] Authenticates user with bcrypt
-  - [ ] Issues JWT on success
-  - [ ] Returns error on invalid credentials
+**Dependencies:** task-1.1  
+**Estimated Duration:** 20 min  
+**Verification Criteria:**  
+- [ ] All content extracted  
+- [ ] File sources noted  
+- [ ] No content omitted
 
 ---
 
-#### Task 4.3: Implement Protected `/auth/me` Endpoint
+### **task-3.1: Analyze and Group Content by Topic and Purpose**
 
-- **Task ID:** task-4.3
-- **Title:** Add `GET /auth/me` protected endpoint in `auth/routes.ts`
-- **Worker Role:**  
-  Backend engineer with Express and Passport.js expertise, experienced in protected route design.
-- **Prompt:**  
-  Implement `GET /auth/me` to return current user info. Protect with JWT middleware.  
-- **Dependencies:** task-3.1, task-4.2
-- **Estimated Duration:** 20 min
-- **Verification Criteria:**  
-  - [ ] Returns user info for valid JWT
-  - [ ] Returns 401 for missing/invalid JWT
+**Title:** Analyze and Group Content by Topic and Purpose  
+**Worker Role:** Documentation architect with technical writing and information architecture expertise, experienced in topic modeling and content organization.  
+**Prompt:**  
+- Review extracted content from all Markdown files.
+- Identify logical topics and purposes (e.g., Introduction, Installation, Usage, Contributing, Architecture, FAQ, References).
+- Group content into sections by topic/purpose.
+- Flag any duplication or overlap for consolidation.
 
----
-
-### **Phase 5: Integration & Middleware**
-
-#### Task 5.1: Integrate Auth Router in Main Server
-
-- **Task ID:** task-5.1
-- **Title:** Mount `auth/routes.ts` in `http-server.ts`
-- **Worker Role:**  
-  Backend engineer with Express expertise, experienced in modular route integration.
-- **Prompt:**  
-  Import and mount the auth router in the main Express server (`http-server.ts`) under `/auth`.  
-- **Dependencies:** task-4.1, task-4.2, task-4.3
-- **Estimated Duration:** 10 min
-- **Verification Criteria:**  
-  - [ ] `/auth` endpoints available on server
-  - [ ] No route conflicts or errors
+**Dependencies:** task-2.1  
+**Estimated Duration:** 20 min  
+**Verification Criteria:**  
+- [ ] Logical sections identified  
+- [ ] Content grouped by topic/purpose  
+- [ ] Duplication/overlap flagged
 
 ---
 
-### **Phase 6: Testing**
+### **task-4.1: Consolidate Content into Master Document with Consistent Formatting**
 
-#### Task 6.1: Add Jest Tests for Auth Endpoints
+**Title:** Consolidate Content into Master Document with Consistent Formatting  
+**Worker Role:** Documentation architect with Markdown formatting and editorial expertise, experienced in consolidation and style harmonization.  
+**Prompt:**  
+- Combine grouped content into a single Markdown file.
+- Apply consistent formatting for headers, lists, code blocks, and links.
+- Add clear section headers for each topic.
+- Create a Table of Contents at the top with links to each major section.
 
-- **Task ID:** task-6.1
-- **Title:** Add Jest tests for registration, login, and protected route
-- **Worker Role:**  
-  QA engineer with Jest and API testing expertise, experienced in authentication and edge case testing.
-- **Prompt:**  
-  Write tests for registration, login, and `/auth/me` endpoints. Cover success, failure, and edge cases (duplicate user, invalid token, etc.).  
-- **Dependencies:** task-5.1
-- **Estimated Duration:** 45 min
-- **Verification Criteria:**  
-  - [ ] Tests for all endpoints
-  - [ ] Edge cases covered
-  - [ ] Tests pass in CI
-
----
-
-### **Phase 7: Documentation**
-
-#### Task 7.1: Update Documentation
-
-- **Task ID:** task-7.1
-- **Title:** Update `orchestrator/README.md` with authentication usage and setup
-- **Worker Role:**  
-  Technical writer with Express and authentication expertise, experienced in developer documentation.
-- **Prompt:**  
-  Document new endpoints, usage examples, and environment variable setup in `orchestrator/README.md`.  
-- **Dependencies:** task-5.1, task-6.1
-- **Estimated Duration:** 20 min
-- **Verification Criteria:**  
-  - [ ] All endpoints documented
-  - [ ] Setup instructions clear
-  - [ ] JWT secret and `.env` usage explained
+**Dependencies:** task-3.1  
+**Estimated Duration:** 30 min  
+**Verification Criteria:**  
+- [ ] All content included  
+- [ ] Consistent formatting  
+- [ ] Section headers present  
+- [ ] Table of Contents present and accurate
 
 ---
 
-### **Phase 8: Edge Case Handling**
+### **task-4.2: Document File Sources for Each Section**
 
-#### Task 8.1: Implement and Test Edge Cases
+**Title:** Document File Sources for Each Section  
+**Worker Role:** Documentation analyst with metadata annotation expertise, experienced in source tracking and documentation.  
+**Prompt:**  
+- For each section in the consolidated document, note the original file(s) the content was sourced from.
+- Use a consistent format (e.g., “*Source: README.md, docs/INSTALL.md*”).
 
-- **Task ID:** task-8.1
-- **Title:** Handle and test edge cases (duplicate registration, invalid tokens, etc.)
-- **Worker Role:**  
-  Backend/QA engineer with authentication and error handling expertise, experienced in robust API design.
-- **Prompt:**  
-  Ensure duplicate usernames are rejected, invalid/expired JWTs are handled, and error messages are secure. Add tests for these cases.  
-- **Dependencies:** task-6.1
-- **Estimated Duration:** 20 min
-- **Verification Criteria:**  
-  - [ ] Duplicate registration returns error
-  - [ ] Invalid/expired JWT returns 401
-  - [ ] No sensitive info leaked in errors
+**Dependencies:** task-4.1  
+**Estimated Duration:** 10 min  
+**Verification Criteria:**  
+- [ ] Each section notes original file(s)  
+- [ ] No missing source notes
 
 ---
 
-# Phase 2: Dependency Mapping
+### **task-4.3: Add "Conflicts" Section for Any Contradictory Information**
 
-**Dependency Graph:**
+**Title:** Add "Conflicts" Section for Any Contradictory Information  
+**Worker Role:** Documentation architect with editorial judgment, experienced in conflict resolution and annotation.  
+**Prompt:**  
+- Review consolidated content for any conflicting or contradictory information.
+- Document each conflict in a dedicated “Conflicts” section.
+- Reference the original sources for each conflict.
 
-```mermaid
-graph TD
-  task-1.1 --> task-2.1
-  task-1.2 --> task-3.1
-  task-2.1 --> task-3.1
-  task-2.1 --> task-3.2
-  task-3.1 --> task-4.2
-  task-3.2 --> task-4.1
-  task-3.2 --> task-4.2
-  task-4.1 --> task-5.1
-  task-4.2 --> task-4.3
-  task-4.2 --> task-5.1
-  task-4.3 --> task-5.1
-  task-5.1 --> task-6.1
-  task-6.1 --> task-7.1
-  task-6.1 --> task-8.1
-```
+**Dependencies:** task-4.1  
+**Estimated Duration:** 10 min  
+**Verification Criteria:**  
+- [ ] All conflicts noted  
+- [ ] Sources referenced  
+- [ ] No contradictions omitted
 
 ---
 
-# Phase 3: Handoff Package
+### **task-5.1: Add Verification Checklist to End of Document**
 
-## Task Table
+**Title:** Add Verification Checklist to End of Document  
+**Worker Role:** Documentation analyst with quality assurance expertise, experienced in checklist creation and documentation review.  
+**Prompt:**  
+- At the end of the consolidated document, add a verification checklist confirming:
+  - All *.md files were included
+  - No important content was omitted
+  - Table of Contents is present and accurate
+  - Formatting is consistent
+  - File sources are documented for each section
 
-| Task ID   | Title                                               | Dependencies         | Est. Duration |
-|-----------|-----------------------------------------------------|----------------------|---------------|
-| task-1.1  | Install Passport.js, bcrypt, jsonwebtoken           | None                 | 15 min        |
-| task-1.2  | Create `.env` for JWT secret                        | None                 | 10 min        |
-| task-2.1  | User model and file storage                         | task-1.1             | 30 min        |
-| task-3.1  | Passport.js JWT strategy                            | task-1.1,1.2,2.1     | 30 min        |
-| task-3.2  | Password hashing with bcrypt                        | task-1.1,2.1         | 20 min        |
-| task-4.1  | Registration endpoint                               | task-2.1,3.2         | 30 min        |
-| task-4.2  | Login endpoint                                      | task-2.1,3.2,3.1     | 30 min        |
-| task-4.3  | Protected `/auth/me` endpoint                       | task-3.1,4.2         | 20 min        |
-| task-5.1  | Integrate auth router in main server                | task-4.1,4.2,4.3     | 10 min        |
-| task-6.1  | Jest tests for auth endpoints                       | task-5.1             | 45 min        |
-| task-7.1  | Update documentation                                | task-5.1,6.1         | 20 min        |
-| task-8.1  | Edge case handling and tests                        | task-6.1             | 20 min        |
-
----
-
-# Phase 4: Context Sources
-
-**For all tasks, context sources include:**
-- `package.json` (dependencies)
-- `http-server.ts` (main server)
-- `orchestrator/README.md` (docs)
-- `auth/` directory (to be created)
-- `data/users.json` (to be created)
-- `.env` (to be created)
-- Official docs: [Passport.js](http://www.passportjs.org/), [bcrypt](https://www.npmjs.com/package/bcrypt), [jsonwebtoken](https://www.npmjs.com/package/jsonwebtoken)
-- Jest test files (for testing)
+**Dependencies:** task-4.2, task-4.3  
+**Estimated Duration:** 10 min  
+**Verification Criteria:**  
+- [ ] Checklist present  
+- [ ] All criteria covered  
+- [ ] Links to sections verified
 
 ---
 
-# Phase 5: Worker & QC Agent Roles
+### **task-5.2: Final Review and Save as CONSOLIDATED_DOCUMENTATION.md**
 
-**Worker roles and QC roles are specified per task above.**  
-**QC agents for all tasks:**  
-- Senior security/code reviewer with expertise in authentication, Express, and TypeScript. Aggressively verifies security, functionality, and code quality per OWASP, JWT RFC, and Node.js best practices.
+**Title:** Final Review and Save as CONSOLIDATED_DOCUMENTATION.md  
+**Worker Role:** Documentation architect with editorial and QA expertise, experienced in final review and file management.  
+**Prompt:**  
+- Review the consolidated document for completeness and accuracy.
+- Save the file as CONSOLIDATED_DOCUMENTATION.md in the repository root.
+- Confirm all requirements and verification criteria are met.
 
----
-
-# Phase 6: Verification Criteria
-
-**Each task includes specific, measurable verification criteria.**  
-**All endpoints, tests, and docs must be present and verified.**
-
----
-
-# Phase 7: Edge Cases
-
-**Edge cases to be handled:**
-- Duplicate username registration
-- Invalid/expired JWTs
-- Missing JWT secret
-- File I/O errors in user storage
-- Password hash verification failures
+**Dependencies:** task-5.1  
+**Estimated Duration:** 10 min  
+**Verification Criteria:**  
+- [ ] File saved as CONSOLIDATED_DOCUMENTATION.md  
+- [ ] All requirements met  
+- [ ] Ready for use
 
 ---
 
-# Phase 8: Execution Order
+## Phase 3: Dependency Mapping
 
-**Recommended order:**  
-1. task-1.1, task-1.2  
-2. task-2.1  
-3. task-3.1, task-3.2  
-4. task-4.1, task-4.2, task-4.3  
-5. task-5.1  
-6. task-6.1  
-7. task-7.1, task-8.1
+- **task-1.1** → **task-2.1** → **task-3.1** → **task-4.1**
+- **task-4.1** → **task-4.2** and **task-4.3** (parallel)
+- **task-4.2**, **task-4.3** → **task-5.1**
+- **task-5.1** → **task-5.2**
 
 ---
 
-# Phase 9: Completion Criteria
+## Phase 4: QC Agent Roles & Verification
 
-- All 14 requirements decomposed into 12 atomic tasks
-- Each task has context, dependencies, acceptance/verification criteria, and edge cases
-- Dependency graph mapped
-- Handoff package ready for worker agents
+**QC Agent Role for All Tasks:**  
+Senior documentation quality assurance specialist with expertise in Markdown standards, technical writing, and information architecture. Aggressively verifies completeness, formatting consistency, source annotation, and conflict documentation. Markdown best practices and technical documentation expert.
+
+**Verification Criteria (per task):**
+- Security: No sensitive information exposed; all file sources referenced.
+- Functionality: All content included; Table of Contents links work; conflicts documented.
+- Code Quality: Consistent Markdown formatting; section headers; checklist present.
 
 ---
 
-**All requirements decomposed. 12 actionable tasks ready for worker agents.**  
-**No past failures detected.**  
-**Ready for implementation.**
+## Phase 5: Avoidance Strategies (if past failures found)
+
+- No past failures detected in knowledge graph.
+- If encountered: Ensure all *.md files are listed and included; cross-check with directory listing; flag and document any conflicts.
+
+---
+
+## Final Output: Worker Execution Package
+
+Below is the complete, self-contained execution plan for workers:
+
+---
+
+# CONSOLIDATED DOCUMENTATION EXECUTION PLAN
+
+## Table of Tasks
+
+| Task ID   | Title                                                        | Dependencies         | Estimated Duration | Worker Role Description                                                                 |
+|-----------|--------------------------------------------------------------|----------------------|-------------------|-----------------------------------------------------------------------------------------|
+| task-1.1  | List and Inventory All Markdown Files in Repo                | None                 | 10 min            | Documentation analyst with repo structure expertise, experienced in file discovery and metadata extraction. |
+| task-2.1  | Extract Content from Each Markdown File                      | task-1.1             | 20 min            | Documentation analyst with Markdown parsing expertise, experienced in content extraction and metadata annotation. |
+| task-3.1  | Analyze and Group Content by Topic and Purpose               | task-2.1             | 20 min            | Documentation architect with technical writing and information architecture expertise, experienced in topic modeling and content organization. |
+| task-4.1  | Consolidate Content into Master Document with Consistent Formatting | task-3.1             | 30 min            | Documentation architect with Markdown formatting and editorial expertise, experienced in consolidation and style harmonization. |
+| task-4.2  | Document File Sources for Each Section                       | task-4.1             | 10 min            | Documentation analyst with metadata annotation expertise, experienced in source tracking and documentation. |
+| task-4.3  | Add "Conflicts" Section for Any Contradictory Information    | task-4.1             | 10 min            | Documentation architect with editorial judgment, experienced in conflict resolution and annotation. |
+| task-5.1  | Add Verification Checklist to End of Document                | task-4.2, task-4.3   | 10 min            | Documentation analyst with quality assurance expertise, experienced in checklist creation and documentation review. |
+| task-5.2  | Final Review and Save as CONSOLIDATED_DOCUMENTATION.md       | task-5.1             | 10 min            | Documentation architect with editorial and QA expertise, experienced in final review and file management. |
+
+---
+
+## Execution Order
+
+1. **task-1.1** → 2. **task-2.1** → 3. **task-3.1** → 4. **task-4.1** →  
+5. **task-4.2** & **task-4.3** (parallel) → 6. **task-5.1** → 7. **task-5.2**
+
+---
+
+## Worker Instructions
+
+- Claim tasks in dependency order.
+- For each task, follow the prompt and verification criteria.
+- If any conflicts or ambiguities arise, document them in the "Conflicts" section.
+- Ensure all content is included, formatted, and sourced.
+- Final output must be CONSOLIDATED_DOCUMENTATION.md, ready for use.
+
+---
+
+## QC Agent Instructions
+
+- For each completed task, verify:
+  - All *.md files included
+  - No content omitted
+  - Table of Contents present and accurate
+  - Formatting is consistent
+  - File sources documented for each section
+  - Conflicts section present (if needed)
+  - Verification checklist present
+
+---
+
+## Handoff Package Complete
+
+**All requirements decomposed into actionable, worker-ready tasks.  
+Ready for execution and QC review.**
+
+---
+
+**Next Step:**  
+Proceed with **task-1.1: List and Inventory All Markdown Files in Repo**.
