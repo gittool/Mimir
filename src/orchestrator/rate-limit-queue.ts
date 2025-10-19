@@ -26,7 +26,7 @@ export interface RateLimitConfig {
 }
 
 export class RateLimitQueue {
-  private static instance: RateLimitQueue;
+  private static instances: Map<string, RateLimitQueue> = new Map();
   
   // Configuration
   private config: RateLimitConfig;
@@ -57,18 +57,19 @@ export class RateLimitQueue {
     this.updateDerivedValues();
   }
   
-  static getInstance(config?: Partial<RateLimitConfig>): RateLimitQueue {
-    if (!RateLimitQueue.instance) {
-      RateLimitQueue.instance = new RateLimitQueue(config);
+  static getInstance(config?: Partial<RateLimitConfig>, instanceKey: string = 'default'): RateLimitQueue {
+    if (!RateLimitQueue.instances.has(instanceKey)) {
+      RateLimitQueue.instances.set(instanceKey, new RateLimitQueue(config));
     } else if (config) {
       // Update config on existing instance if provided
-      RateLimitQueue.instance.config = {
-        ...RateLimitQueue.instance.config,
+      const instance = RateLimitQueue.instances.get(instanceKey)!;
+      instance.config = {
+        ...instance.config,
         ...config,
       };
-      RateLimitQueue.instance.updateDerivedValues();
+      instance.updateDerivedValues();
     }
-    return RateLimitQueue.instance;
+    return RateLimitQueue.instances.get(instanceKey)!;
   }
   
   /**

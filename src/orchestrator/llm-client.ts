@@ -65,8 +65,8 @@ export class CopilotAgentClient {
   private configLoader: LLMConfigLoader;
   private agentConfig: AgentConfig; // Store for lazy initialization
   
-  // Rate limiter (NEW)
-  private rateLimiter: RateLimitQueue;
+  // Rate limiter (NEW) - initialized lazily after provider is determined
+  private rateLimiter: RateLimitQueue | null = null;
 
   constructor(config: AgentConfig) {
     // Use custom tools if provided, otherwise default to allTools
@@ -88,10 +88,8 @@ export class CopilotAgentClient {
     // Load config loader (synchronous singleton access)
     this.configLoader = LLMConfigLoader.getInstance();
     
-    // Initialize rate limiter with provider-specific config
-    const providerName = config.provider?.toString().toLowerCase() || 'ollama';
-    const rateLimitConfig = loadRateLimitConfig(providerName);
-    this.rateLimiter = RateLimitQueue.getInstance(rateLimitConfig);
+    // Note: Rate limiter initialization deferred to initializeLLM() 
+    // so we use the correct provider (not a premature default)
     
     console.log(`🔧 Tools available (${this.tools.length}): ${this.tools.map(t => t.name).slice(0, 10).join(', ')}${this.tools.length > 10 ? '...' : ''}`);
   }
@@ -299,6 +297,11 @@ Start by using read_file to read AGENTS.md, then use run_terminal_cmd to run tes
     this.provider = provider;
     this.modelName = model;
     
+    // Initialize rate limiter NOW that we know the actual provider
+    const providerName = provider.toString().toLowerCase();
+    const rateLimitConfig = loadRateLimitConfig(providerName);
+    this.rateLimiter = RateLimitQueue.getInstance(rateLimitConfig, providerName);
+    
     // Initialize provider-specific configuration
     switch (provider) {
       case LLMProvider.OLLAMA:
@@ -489,6 +492,15 @@ CONCISE SUMMARY:`;
       duration: number;
     };
   }> {
+    if (!this.agent) {
+      throw new Error('Agent not initialized. Call loadPreamble() first.');
+    }
+    
+    // Ensure rate limiter is initialized (should happen in initializeLLM)
+    if (!this.rateLimiter) {
+      throw new Error('Rate limiter not initialized. This should not happen - please report this bug.');
+    }
+    
     // Conservative estimate: 1 base request + assume some tool calls
     // Will be updated with actual count after execution
     const estimatedRequests = 1 + Math.min(this.tools.length, 10); // Assume up to 10 tool calls
@@ -715,10 +727,17 @@ CONCISE SUMMARY:`;
     ).length;
     
     // Log discrepancy for monitoring
-    if (actualRequests > 0) {
+    if (actualRequests > 0 && this.rateLimiter) {
       const metrics = this.rateLimiter.getMetrics();
       console.log(`📊 API Usage: ${actualRequests} requests, ${result.toolCalls} tool calls`);
-      console.log(`📊 Rate Limit: ${metrics.requestsInCurrentHour}/${metrics.requestsInCurrentHour + metrics.remainingCapacity} (${metrics.usagePercent.toFixed(1)}%)`);
+      
+      // Handle bypass mode display
+      if (metrics.remainingCapacity === Infinity) {
+        console.log(`📊 Rate Limit: BYPASSED (no limits enforced)`);
+      } else {
+        const totalCapacity = metrics.requestsInCurrentHour + metrics.remainingCapacity;
+        console.log(`📊 Rate Limit: ${metrics.requestsInCurrentHour}/${totalCapacity} (${metrics.usagePercent.toFixed(1)}%)`);
+      }
     }
   }
 }
