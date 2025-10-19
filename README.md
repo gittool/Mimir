@@ -144,10 +144,39 @@ ollama pull gpt-oss
 
 **Future**: RAG/vector embeddings will use separate configuration when implemented.
 
-### Folder Configuration & File Indexing
+### File Watching & Automatic Indexing
 
-#### Initial Folder Setup
-The system can automatically index and watch folders for changes. By default, Docker Compose mounts your home workspace:
+The system includes **automatic file indexing** that keeps the Neo4j knowledge graph synchronized with your codebase. This enables agents to have up-to-date context about your project files.
+
+#### Quick Setup
+
+**On Host Machine:**
+```bash
+# Watch current project's src directory (auto-detect)
+node setup-watch.js
+
+# Or watch specific directory
+node setup-watch.js /path/to/your/project/src
+
+# Or use environment variable
+WATCH_PATH=/custom/path/src node setup-watch.js
+
+# Verify indexing
+node check-watches.js
+```
+
+**In Docker Container:**
+```bash
+# Auto-detects /workspace mount point
+docker exec mcp_server node setup-watch.js
+
+# Verify
+docker exec mcp_server node check-watches.js
+```
+
+#### Docker Configuration
+
+The docker-compose.yml includes automatic mount configuration:
 
 ```yaml
 # docker-compose.yml (already configured)
@@ -166,19 +195,49 @@ docker-compose up -d
 # - ${HOST_WORKSPACE_ROOT:-/path/to/your/workspace}:/workspace:ro
 ```
 
-#### Adding Folders for Indexing
-Use the `watch_folder` MCP tool to add directories for automatic indexing:
+#### How It Works
 
+1. **Environment Detection**: Automatically detects host vs Docker container
+   - **Docker**: Uses `WORKSPACE_ROOT=/workspace` (set in docker-compose.yml)
+   - **Host**: Uses current directory or `WATCH_PATH` environment variable
+
+2. **Path Mapping**:
+   ```
+   Host:      ${HOST_WORKSPACE_ROOT:-~/src}  (configurable)
+   Container: /workspace                      (standardized)
+   Watch:     /workspace/src                  (auto-detected)
+   ```
+
+3. **File Indexing**:
+   - Scans directory for matching files (`*.ts`, `*.js`, `*.json`, `*.md`)
+   - Respects `.gitignore` patterns automatically
+   - Stores file nodes in Neo4j with content and metadata
+   - Agents can query indexed files via `graph_search_nodes`
+
+4. **Agent Integration**:
+   ```bash
+   npm run chain "what files do we have?"
+   # Agent uses indexed file context from graph
+   ```
+
+#### Advanced Configuration
+
+**Custom file patterns** (edit `setup-watch.js`):
 ```javascript
-// Example: Index a project folder
-await mcp.call('watch_folder', {
-  path: '/workspace/src',           // Must be under mounted path
-  recursive: true,                  // Watch subdirectories
-  debounce_ms: 500,                // File change debounce
-  file_patterns: ['*.ts', '*.js', '*.md']  // File types to index
-});
+file_patterns: ['*.ts', '*.js', '*.json', '*.md', '*.py']  // Add Python
+ignore_patterns: ['*.test.ts', 'node_modules/**', 'dist/**']
+```
 
-// Example: Index multiple project folders
+**Multiple directories**:
+```bash
+# Watch source code
+node setup-watch.js /workspace/src
+
+# Watch documentation  
+node setup-watch.js /workspace/docs
+```
+
+**For complete documentation**, see [docs/guides/FILE_WATCHING_GUIDE.md](docs/guides/FILE_WATCHING_GUIDE.md)
 await mcp.call('watch_folder', {
   path: '/workspace/docs',
   recursive: true,
