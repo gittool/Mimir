@@ -555,56 +555,44 @@ async function storeTaskResultInGraph(
   task: TaskDefinition,
   result: Omit<ExecutionResult, 'graphNodeId'>
 ): Promise<string> {
-  const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:3000/mcp';
-  
   try {
-    const response = await fetch(MCP_SERVER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'tools/call',
-        params: {
-          name: 'graph_add_node',
-          arguments: {
-            type: 'todo',
-            properties: {
-              title: `Task Execution: ${task.id}`,
-              taskId: task.id,
-              agentRole: task.agentRoleDescription,
-              recommendedModel: task.recommendedModel,
-              status: result.status,
-              output: result.output, // Store FULL output (not truncated)
-              duration: result.duration,
-              tokens: result.tokens ? `${result.tokens.input} input, ${result.tokens.output} output` : 'N/A',
-              toolCalls: result.toolCalls || 0,
-              estimatedDuration: task.estimatedDuration,
-              preamblePath: result.preamblePath,
-              error: result.error || null,
-              executedAt: new Date().toISOString(),
-            },
-          },
-        },
-      }),
+    const graphManager = await getGraphManager();
+    
+    const node = await graphManager.addNode('todo', {
+      title: `Task Execution: ${task.id}`,
+      taskId: task.id,
+      agentRole: task.agentRoleDescription,
+      recommendedModel: task.recommendedModel,
+      status: result.status,
+      output: result.output, // Store FULL output (not truncated)
+      duration: result.duration,
+      tokens: result.tokens ? `${result.tokens.input} input, ${result.tokens.output} output` : 'N/A',
+      toolCalls: result.toolCalls || 0,
+      estimatedDuration: task.estimatedDuration,
+      preamblePath: result.preamblePath,
+      error: result.error || null,
+      executedAt: new Date().toISOString(),
+      
+      // Additional execution metadata for analysis
+      qcVerification: result.qcVerification ? JSON.stringify({
+        passed: result.qcVerification.passed,
+        score: result.qcVerification.score,
+        feedback: result.qcVerification.feedback,
+        issuesCount: result.qcVerification.issues?.length || 0,
+        timestamp: result.qcVerification.timestamp,
+      }) : null,
+      qcVerificationHistory: result.qcVerificationHistory ? JSON.stringify(
+        result.qcVerificationHistory.map(qc => ({
+          passed: qc.passed,
+          score: qc.score,
+          timestamp: qc.timestamp,
+        }))
+      ) : null,
+      attemptNumber: result.attemptNumber || 1,
     });
     
-    if (!response.ok) {
-      console.warn(`⚠️  Failed to store result in graph: ${response.statusText}`);
-      return '';
-    }
-    
-    const data = await response.json();
-    const nodeId = data.result?.content?.[0]?.text?.match(/Node ID: ([^\s]+)/)?.[1] || '';
-    
-    if (nodeId) {
-      console.log(`💾 Stored in graph: ${nodeId}`);
-    }
-    
-    return nodeId;
+    console.log(`💾 Stored in graph: ${node.id}`);
+    return node.id;
   } catch (error: any) {
     console.warn(`⚠️  Failed to store result in graph: ${error.message}`);
     return '';
@@ -947,62 +935,46 @@ async function fetchTaskContext(taskId: string, agentType: 'worker' | 'qc'): Pro
 }
 
 /**
- * Update graph node via MCP
+ * Create task node in graph for tracking (idempotent)
  */
 async function createGraphNode(taskId: string, properties: Record<string, any>): Promise<void> {
-  const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:3000/mcp';
+  const graphManager = await getGraphManager();
   
   try {
-    await fetch(MCP_SERVER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'tools/call',
-        params: {
-          name: 'graph_add_node',
-          arguments: {
-            type: 'todo',
-            properties: {
-              id: taskId,
-              ...properties,
-            },
-          },
-        },
-      }),
+    // Try to get existing node first
+    const existing = await graphManager.getNode(taskId);
+    
+    if (existing) {
+      console.log(`♻️  Task node ${taskId} already exists, updating instead`);
+      await graphManager.updateNode(taskId, properties);
+      return;
+    }
+  } catch (error) {
+    // Node doesn't exist, create it
+  }
+  
+  // Create new node
+  console.log(`💾 Creating task node: ${taskId}`);
+  try {
+    await graphManager.addNode('todo', {
+      id: taskId,
+      ...properties,
     });
+    console.log(`✅ Task node created: ${taskId}`);
   } catch (error: any) {
-    console.warn(`⚠️  Failed to create graph node: ${error.message}`);
+    console.error(`❌ Failed to create graph node ${taskId}:`, error.message);
+    // Don't throw - log and continue (allows execution to proceed even if graph fails)
   }
 }
 
+/**
+ * Update task node in graph
+ */
 async function updateGraphNode(taskId: string, properties: Record<string, any>): Promise<void> {
-  const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:3000/mcp';
-  
   try {
-    await fetch(MCP_SERVER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'tools/call',
-        params: {
-          name: 'graph_update_node',
-          arguments: {
-            id: taskId,
-            properties,
-          },
-        },
-      }),
-    });
+    const graphManager = await getGraphManager();
+    
+    await graphManager.updateNode(taskId, properties);
   } catch (error: any) {
     console.warn(`⚠️  Failed to update graph node: ${error.message}`);
   }
@@ -1701,6 +1673,54 @@ export async function executeChainOutput(
     console.warn('⚠️  No tasks found in chain output');
     return [];
   }
+  
+  // ✅ NEW: Create all task definition nodes in graph BEFORE execution
+  console.log('-'.repeat(80));
+  console.log('STEP 0: Create Task Definitions in Graph');
+  console.log('-'.repeat(80) + '\n');
+  
+  console.log('💾 Creating task definition nodes in graph...\n');
+  for (const task of tasks) {
+    await createGraphNode(task.id, {
+      taskId: task.id,
+      title: task.title || `Task ${task.id}`,
+      description: task.prompt.substring(0, 1000), // First 1k chars
+      requirements: task.prompt,
+      status: 'pending',
+      workerRole: task.agentRoleDescription,
+      qcRole: task.qcRole || 'To be auto-generated',
+      verificationCriteria: task.verificationCriteria || 'To be auto-generated',
+      maxRetries: task.maxRetries || 2,
+      hasQcVerification: !!task.qcRole,
+      dependencies: task.dependencies || [],
+      estimatedDuration: task.estimatedDuration,
+      parallelGroup: task.parallelGroup,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  console.log(`✅ Created ${tasks.length} task definition nodes\n`);
+  
+  // ✅ NEW: Create dependency edges
+  console.log('🔗 Creating task dependency edges...\n');
+  const graphManager = await getGraphManager();
+  let edgeCount = 0;
+  for (const task of tasks) {
+    if (task.dependencies && task.dependencies.length > 0) {
+      for (const depId of task.dependencies) {
+        try {
+          await graphManager.addEdge(task.id, depId, 'depends_on', {
+            createdBy: 'task-executor',
+            createdAt: new Date().toISOString(),
+          });
+          edgeCount++;
+          console.log(`   ✓ ${task.id} → depends_on → ${depId}`);
+        } catch (error: any) {
+          console.warn(`   ⚠️  Failed to create edge ${task.id} → ${depId}: ${error.message}`);
+        }
+      }
+    }
+  }
+  console.log(`\n✅ Created ${edgeCount} dependency edges\n`);
   
   // Group tasks by agent role (for preamble reuse)
   const roleMap = new Map<string, TaskDefinition[]>();

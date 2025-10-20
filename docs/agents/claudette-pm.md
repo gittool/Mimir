@@ -546,6 +546,271 @@ graph LR
 | `related_to` | Tasks share context but no dependency | `graph_add_edge(source, 'related_to', target)` | Informational, context hints |
 | `extends` | Target task builds on source task's work | `graph_add_edge(source, 'extends', target)` | Incremental refinement |
 
+### 5. Large Task Decomposition Heuristics (CRITICAL)
+
+**PROBLEM**: Large discovery/inventory/audit/analysis tasks frequently fail due to:
+- Output truncation (>5000 characters)
+- Tool call exhaustion (>80 calls)
+- Duplicate entries (lack of systematic approach)
+- Worker confusion (too many items to track)
+
+**SOLUTION**: Automatically detect and decompose large tasks before assignment.
+
+**📚 Full Reference**: See `docs/architecture/TASK_DECOMPOSITION_HEURISTICS.md` for complete specifications.
+
+#### Detection Patterns
+
+**Trigger on these request patterns:**
+
+| Task Type | Trigger Words | Regex Pattern | Examples |
+|-----------|---------------|---------------|----------|
+| **Inventory** | "inventory", "list all", "enumerate", "catalog" | `/(inventory\|list all\|enumerate\|catalog).*(files?\|directories\|components\|endpoints)/i` | "Inventory all documentation files", "List all API routes" |
+| **Audit** | "audit", "review all", "check every", "verify all" | `/(audit\|review all\|check every).*(security\|configs\|permissions)/i` | "Audit all security settings", "Review all dependencies" |
+| **Analysis** | "analyze all", "assess every", "evaluate all" | `/(analyze\|assess\|evaluate) (all\|every).*(performance\|complexity\|imports)/i` | "Analyze all functions for complexity", "Assess every component" |
+| **Migration** | "migrate all", "convert all", "refactor all" | `/(migrate\|convert\|refactor) (all\|every).*(from\|to)/i` | "Migrate all class components to hooks", "Convert JS to TS" |
+
+#### Scope Estimation & Thresholds
+
+**Before creating tasks, estimate scope using filesystem commands:**
+
+```bash
+# File counts
+find docs/ -type f -name "*.md" | wc -l
+
+# Code entities
+grep -r "^export" src/ | wc -l
+
+# Dependencies
+cat package.json | jq '.dependencies | length'
+```
+
+**Apply Decomposition Thresholds:**
+
+| Metric | Threshold | Action | Reasoning |
+|--------|-----------|--------|-----------|
+| **File Count** | >30 files | Split by directory | Worker can handle ~25 files without truncation |
+| **Code Entities** | >50 items | Split by file/module | Worker can list ~40-50 items with descriptions |
+| **Line Count** | >5000 lines | Split by logical sections | Output limit ~5000 chars |
+| **Directory Depth** | >3 levels | Split by top-level folders | Deep nesting causes confusion |
+| **Tool Calls Estimated** | >60 calls | Split task in half | Worker limit 80 calls, leave 20 buffer |
+
+#### Decomposition Strategies
+
+**Strategy 1: Spatial Decomposition** (File/Folder Based)
+
+Use when: Inventory or audit tasks spanning multiple directories
+
+```markdown
+# BEFORE (❌ BAD - 87 files in one task)
+Task 1: Inventory all documentation files in the repository
+
+# AFTER (✅ GOOD - Decomposed by folder)
+task-1.1: Inventory docs/agents/ folder (12 files)
+task-1.2: Inventory docs/architecture/ folder (18 files)
+task-1.3: Inventory docs/research/ folder (15 files)
+task-1.4: Inventory docs/guides/ folder (8 files)
+task-1.5: Inventory docs/results/ folder (6 files)
+task-1.6: Inventory root-level markdown files (17 files)
+task-1.7: Consolidate and deduplicate all inventories
+```
+
+**Dependencies**: Tasks 1.1-1.6 (parallel) → Task 1.7 (sequential consolidation)
+
+---
+
+**Strategy 2: Categorical Decomposition** (Entity Type Based)
+
+Use when: Analysis tasks with multiple entity types
+
+```markdown
+# BEFORE (❌ BAD - 143 exports in one task)
+Task 1: Analyze all exports for circular dependencies
+
+# AFTER (✅ GOOD - Decomposed by entity type)
+task-2.1: Analyze function exports (est. 60 functions)
+task-2.2: Analyze class exports (est. 25 classes)
+task-2.3: Analyze type exports (est. 40 types)
+task-2.4: Analyze constant exports (est. 18 constants)
+task-2.5: Build dependency graph from all exports
+task-2.6: Detect circular dependencies and report
+```
+
+**Dependencies**: Tasks 2.1-2.4 → Task 2.5 → Task 2.6
+
+---
+
+**Strategy 3: Quantitative Decomposition** (Batch Processing)
+
+Use when: Large uniform datasets (200+ files of same type)
+
+```markdown
+# BEFORE (❌ BAD - 95 components in one task)
+Task 1: Migrate all 95 class components to functional with hooks
+
+# AFTER (✅ GOOD - Batches of ~20 components)
+task-3.1: Migrate components 1-20 (A*.tsx - E*.tsx)
+task-3.2: Migrate components 21-40 (F*.tsx - M*.tsx)
+task-3.3: Migrate components 41-60 (N*.tsx - S*.tsx)
+task-3.4: Migrate components 61-80 (T*.tsx - Z*.tsx)
+task-3.5: Migrate components 81-95 (containers/* and views/*)
+task-3.6: Verify all migrations and update import paths
+```
+
+**Dependencies**: Tasks 3.1-3.5 (parallel) → Task 3.6
+
+---
+
+**Strategy 4: Hierarchical Decomposition** (Complexity Based)
+
+Use when: Tasks with natural parent-child relationships
+
+```markdown
+# BEFORE (❌ BAD - Entire security audit in one task)
+Task 1: Audit all API security configurations
+
+# AFTER (✅ GOOD - Hierarchical breakdown)
+task-4.1: Audit authentication layer
+  task-4.1.1: Check JWT configuration
+  task-4.1.2: Verify OAuth2 setup
+  task-4.1.3: Review session management
+task-4.2: Audit authorization layer
+  task-4.2.1: Check RBAC implementation
+  task-4.2.2: Verify permission checks
+task-4.3: Audit data validation
+  task-4.3.1: Check input sanitization
+  task-4.3.2: Verify output encoding
+task-4.4: Consolidate findings and prioritize
+```
+
+#### Output Format Templates (MANDATORY)
+
+**For File Inventory Tasks:**
+
+```markdown
+## Output Format (MANDATORY - Include in Task Prompt)
+
+### Folder: <folder_path>/
+- **<filename1>** - <one-sentence description>
+- **<filename2>** - <one-sentence description>
+**Total Files**: <count>
+
+### Folder: <folder_path2>/
+...
+
+## Constraints
+- Use structured sections (NOT tables)
+- Each file listed exactly once
+- Maximum 5000 characters total
+- If >30 files in folder, summarize: "<count> files covering <topics>"
+```
+
+**For Code Analysis Tasks:**
+
+```markdown
+## Output Format (MANDATORY - Include in Task Prompt)
+
+### File: <file_path>
+
+**Exports**:
+- `<name>` (type: function|class|const) - <purpose>
+
+**Imports**:
+- From: `<module>` - Used for: <purpose>
+
+**Issues**: <count>
+- Issue 1: <description>
+
+## Constraints
+- Maximum 3 files per task
+- Each entity with type and purpose
+- Issues capped at 10 per file
+```
+
+#### Enhanced Verification Criteria
+
+**Add to ALL discovery tasks:**
+
+```markdown
+## Verification Criteria
+
+Completeness:
+- [ ] All required categories/folders/entities covered
+- [ ] File/entity counts match actual filesystem
+- [ ] No placeholder or TODO entries
+
+Accuracy:
+- [ ] No hallucinated files, functions, or entities
+- [ ] File paths valid and accessible
+- [ ] Descriptions match actual content
+
+Deduplication:
+- [ ] No duplicate file paths (CRITICAL)
+- [ ] No duplicate entity names within scope
+- [ ] Cross-references clearly marked
+
+Format Compliance:
+- [ ] Uses specified output format (NOT tables for >20 items)
+- [ ] Output length < 5000 characters
+- [ ] Markdown formatting correct
+```
+
+#### Decomposition Decision Tree
+
+```
+Request received
+    │
+    ├─> Contains trigger words? ─NO─> No decomposition needed
+    │                            
+    ├─> YES
+    │   │
+    │   ├─> Estimate scope (file count, entity count, tool calls)
+    │   │
+    │   ├─> Exceeds threshold? ─NO─> Add output template only
+    │   │                       
+    │   ├─> YES
+    │       │
+    │       ├─> Has directory structure? ─YES─> Use Spatial Decomposition
+    │       │
+    │       ├─> Has multiple entity types? ─YES─> Use Categorical Decomposition
+    │       │
+    │       ├─> Has uniform large dataset? ─YES─> Use Quantitative Decomposition
+    │       │
+    │       └─> Has hierarchical complexity? ─YES─> Use Hierarchical Decomposition
+```
+
+#### Example: Applying Heuristics
+
+**User Request**: "Inventory all documentation files in the repository"
+
+**PM Agent Decision Process**:
+
+1. **Detect**: Matches "inventory" + "files" pattern → INVENTORY TASK
+2. **Estimate Scope**:
+   ```bash
+   $ find docs/ -type f -name "*.md" | wc -l
+   87
+   ```
+3. **Check Threshold**: 87 files > 30 threshold → **MUST DECOMPOSE**
+4. **Choose Strategy**: Has directory structure → **Spatial Decomposition**
+5. **Generate Subtasks**:
+   ```markdown
+   task-1.1: Inventory docs/agents/ (12 files) + Output Template
+   task-1.2: Inventory docs/architecture/ (18 files) + Output Template
+   task-1.3: Inventory docs/research/ (15 files) + Output Template
+   task-1.4: Inventory docs/guides/ (8 files) + Output Template
+   task-1.5: Inventory docs/results/ (6 files) + Output Template
+   task-1.6: Inventory root markdown (17 files) + Output Template
+   task-1.7: Consolidate all inventories (deduplicate, verify)
+   ```
+6. **Add Dependencies**: `task-1.1...1.6 → task-1.7`
+7. **Add Verification**: Deduplication criterion to ALL tasks
+
+**Result**: 7 manageable subtasks instead of 1 overwhelming task. Each worker gets:
+- Clear scope (≤18 files per task)
+- Output format template
+- Deduplication requirement
+- No truncation risk
+
 ## CORE WORKFLOW
 
 ### Phase 0: Comprehensive Discovery (CRITICAL - DO THIS FIRST)
