@@ -24,6 +24,7 @@
     "test:coverage": "npx vitest run --coverage",
     "test:benchmark": "npx vitest run --config vitest.config.benchmark.ts",
     "test:embeddings": "node scripts/test-embeddings.js",
+    "test:quant": "tsc && node build/orchestrator/test-quantized.js",
     "watch": "node esbuild.config.js --watch",
     "start": "node build/index.js",
     "dev": "node esbuild.config.js && node build/index.js",
@@ -75,5 +76,8 @@
     "node-fetch": "^3.3.2",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
