@@ -41,7 +41,8 @@
     "setup:copilot": "npm list -g copilot-api || npm install -g copilot-api && (pgrep -f copilot-api || nohup copilot-api start &)",
     "setup:global": "npm link",
     "setup:verify": "node -e \"console.log('✅ Node.js:', process.version); console.log('✅ npm:', require('child_process').execSync('npm --version', {encoding:'utf8'}).trim()); try { require('child_process').execSync('docker --version', {stdio:'pipe'}); console.log('✅ Docker: Available'); } catch(e) { console.log('❌ Docker: Not available'); } try { require('child_process').execSync('gh --version', {stdio:'pipe'}); console.log('✅ GitHub CLI: Available'); } catch(e) { console.log('❌ GitHub CLI: Not available'); }\"",
-    "postinstall": "echo '\n🚀 Mimir installed! Run npm run setup:complete for full development setup\n'"
+    "postinstall": "echo '\n🚀 Mimir installed! Run npm run setup:complete for full development setup\n'",
+    "ollama:pull": "docker exec -it ollama_server ollama pull"
   },
   "author": "",
   "license": "ISC",

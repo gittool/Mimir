@@ -25,13 +25,38 @@ services:
     networks:
       - mcp_network
 
+  copilot-api:
+    image: timothyswt/copilot-api:latest
+    container_name: copilot_api_server
+    ports:
+      - "4141:4141"  # Fixed: copilot-api listens on 4141, not 3000
+    volumes:
+      - ./copilot-data:/root/.local/share/copilot-api  # Persist GitHub token
+    environment:
+      - NODE_ENV=production
+      # Remove PORT=3000, the app uses 4141 by default
+    restart: unless-stopped
+    healthcheck:
+      # Use CMD-SHELL so shell operators (||) work and allow a proper HTTP probe
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:4141/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - mcp_network
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama_server
     ports:
       - "11434:11434"  # Ollama API
+    # volumes:
+      # - C:/Games/ollama:/root/.ollama  # Persist models from Windows path
     volumes:
-      - ./data/ollama:/root/.ollama  # Persist models
+      - type: bind
+        source: ollama_models
+        target: /root/.ollama
     environment:
       # Proxy settings (if needed in corporate environments)
       - HTTPS_PROXY=${HTTPS_PROXY:-}
@@ -55,15 +80,13 @@ services:
     networks:
       - mcp_network
     # Uncomment if you have GPU support (NVIDIA)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    profiles:
-      - ollama  # Only start if explicitly enabled or embeddings feature is active
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   mcp-server:
     build:
@@ -92,8 +115,10 @@ services:
       - HOST_WORKSPACE_ROOT=${HOST_WORKSPACE_ROOT}  # Pass through from host
       
       # LLM Configuration
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://host.docker.internal:4141/v1}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      # - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://copilot-api:4141/v1}
+      # - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://host.docker.internal:4141/v1}
       
       # Feature Flags (override .mimir/llm-config.json)
       - MIMIR_FEATURE_PM_MODEL_SUGGESTIONS=${MIMIR_FEATURE_PM_MODEL_SUGGESTIONS:-false}
@@ -123,9 +148,11 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
-      # Ollama is required for embeddings
-      # ollama:
-      #   condition: service_healthy
+      copilot-api:
+        condition: service_healthy
+      # Ollama is required for embeddings but you can use a local server
+      ollama:
+        condition: service_healthy
     networks:
       - mcp_network
 
@@ -139,7 +166,7 @@ services:
       - open-webui:/app/backend/data
     environment:
       # OpenAI-Compatible API Configuration (Copilot API)
-      - OPENAI_API_BASE_URL=http://host.docker.internal:4141/v1
+      - OPENAI_API_BASE_URL=http://copilot-api:4141/v1
       - OPENAI_API_KEY=sk-copilot-dummy  # Dummy key for copilot-api
       
       # Disable Ollama (using Copilot API instead)
@@ -155,6 +182,7 @@ services:
       - ENABLE_OPENAI_API=true
     depends_on:
       - mcp-server
+      - copilot-api
     networks:
       - mcp_network
     restart: unless-stopped
@@ -163,6 +191,7 @@ services:
 
 volumes:
   open-webui:
+  ollama_models:
 
 networks:
   mcp_network:
