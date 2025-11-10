@@ -453,26 +453,24 @@ When stuck or when solutions introduce new problems:
         import time
         import hashlib
 
-        # ========== DEBUG OUTPUT TO UI ==========
-        yield "\n\n---\n## 🔍 DEBUG: Pipeline Invocation Details\n\n"
-        
+        # Extract request details
         model_id = body.get("model", "")
         messages = body.get("messages", [])
         user_message = messages[-1].get("content", "") if messages else "NO_MESSAGE"
         
-        yield f"**Invocation Time:** {time.strftime('%H:%M:%S', time.localtime())}\n\n"
-        yield f"**Model ID:** `{model_id}`\n\n"
-        yield f"**Message Preview:** `{user_message[:100]}...`\n\n"
-        yield f"**Body Keys:** {list(body.keys())}\n\n"
+        # DETECT AUTO-GENERATED OPEN WEBUI REQUESTS (title, tags, follow-ups)
+        is_auto_generated = any([
+            "Generate a concise" in user_message and "title" in user_message,
+            "Generate 1-3 broad tags" in user_message,
+            "Suggest 3-5 relevant follow-up" in user_message,
+            user_message.startswith("### Task:"),
+        ])
         
-        # DEDUPLICATION
-        current_time = int(time.time())
-        time_window = current_time // 5
+        if is_auto_generated:
+            print(f"⏭️  Skipping auto-generated request: {user_message[:50]}...")
+            return
         
-        # Duplicate detection removed - process all requests
-        
-        # ========== END DEBUG OUTPUT ==========
-        
+        # Validate messages
         if not messages:
             yield "Error: No messages provided"
             return

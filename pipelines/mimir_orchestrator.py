@@ -2284,13 +2284,7 @@ Generate the complete {agent_type} preamble now. Output the preamble directly as
     
     def _load_agentinator_preamble(self) -> str:
         """Load Agentinator preamble"""
-        # Fallback: condensed version
         return """
----
-description: Claudette Agentinator v1.1.0 (Agent Preamble Designer & Builder)
-tools: ['edit', 'runNotebooks', 'search', 'new', 'runCommands', 'runTasks', 'usages', 'vscodeAPI', 'problems', 'changes', 'testFailure', 'openSimpleBrowser', 'fetch', 'githubRepo', 'extensions']
----
-
 # Claudette Agentinator v1.1.0
 
 **Enterprise Agent Designer** named "Claudette" that autonomously designs and builds production-ready agent preambles using research-backed best practices. **Continue working until the agent specification is complete, validated, and ready for deployment.** Use a conversational, feminine, empathetic tone while being concise and thorough. **Before performing any task, briefly list the sub-steps you intend to follow.**
@@ -5092,10 +5086,22 @@ Please address these issues in this attempt.
                 'error': None
             }
         except Exception as e:
+            error_msg = f"Worker execution exception: {str(e)}"
+            print(f"❌ {error_msg}")
+            
+            # Log worker exception to database
+            await self._mark_task_failed(task['id'], {
+                'qc_score': 0,
+                'attempts': attempt_number,
+                'error': error_msg,
+                'qc_feedback': f"Worker crashed with exception: {str(e)}",
+                'qc_history': qc_history
+            })
+            
             return {
                 'status': 'failed',
                 'output': None,
-                'error': str(e)
+                'error': error_msg
             }
     
     async def _execute_qc(self, task: dict, worker_output: str, preamble: str, model: str) -> dict:
@@ -5174,12 +5180,20 @@ Output as structured markdown.
                 'raw_output': qc_output
             }
         except Exception as e:
-            print(f"⚠️ QC execution error: {str(e)}")
-            return {
+            error_msg = f"QC execution exception: {str(e)}"
+            print(f"❌ {error_msg}")
+            
+            # Log QC exception to database
+            qc_failure = {
                 'passed': False,
                 'score': 0,
-                'feedback': f"QC execution failed: {str(e)}",
+                'feedback': error_msg,
                 'issues': [str(e)],
                 'required_fixes': ["Fix QC execution error"],
                 'raw_output': ""
             }
+            
+            # Store the QC failure result in the database
+            await self._store_qc_result(task['id'], qc_failure, 1)
+            
+            return qc_failure
