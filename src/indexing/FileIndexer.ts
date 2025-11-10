@@ -9,6 +9,7 @@ import { Driver } from 'neo4j-driver';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { EmbeddingsService, ChunkEmbeddingResult } from './EmbeddingsService.js';
+import { DocumentParser } from './DocumentParser.js';
 
 export interface IndexResult {
   file_node_id: string;
@@ -20,9 +21,11 @@ export interface IndexResult {
 export class FileIndexer {
   private embeddingsService: EmbeddingsService;
   private embeddingsInitialized: boolean = false;
+  private documentParser: DocumentParser;
 
   constructor(private driver: Driver) {
     this.embeddingsService = new EmbeddingsService();
+    this.documentParser = new DocumentParser();
   }
 
   /**
@@ -41,13 +44,33 @@ export class FileIndexer {
    */
   async indexFile(filePath: string, rootPath: string, generateEmbeddings: boolean = false): Promise<IndexResult> {
     const session = this.driver.session();
+    let content: string = '';
     
     try {
-      // Read file content
-      const content = await fs.readFile(filePath, 'utf-8');
-      const stats = await fs.stat(filePath);
       const relativePath = path.relative(rootPath, filePath);
-      const extension = path.extname(filePath);
+      const extension = path.extname(filePath).toLowerCase();
+      const binaryDoc = this.documentParser.isSupportedFormat(extension)
+      // Skip binary files and non-indexable file types (except supported documents)
+      // Read file content - either as text or extract from documents
+      
+      if (binaryDoc) {
+        // Extract text from PDF or DOCX
+        const buffer = await fs.readFile(filePath);
+        content = await this.documentParser.extractText(buffer, extension);
+        console.log(`📄 Extracted ${content.length} chars from ${extension} document: ${relativePath}`);
+      } else if (!this.shouldSkipFile(filePath, extension)) {
+        // Read as plain text file
+        content = await fs.readFile(filePath, 'utf-8');
+        
+        // Check if content is actually text (not binary masquerading as text)
+        if (!this.isTextContent(content)) {
+          throw new Error('Binary content detected');
+        }
+      } else {
+        throw new Error('Binary or non-indexable file');
+      }
+
+      const stats = await fs.stat(filePath);
       const language = this.detectLanguage(filePath);
       
       // Check if file already has chunks
@@ -82,9 +105,12 @@ export class FileIndexer {
         }
       }
       
-      // Create File node (without embedding, content stored in chunks)
-      // Note: We don't store full content in File node to avoid Neo4j size limits
-      // Content is preserved in FileChunk nodes for retrieval
+      // Determine if file needs chunking (based on embeddings config chunk size)
+      const needsChunking = generateEmbeddings && content.length > 1000; // Will be refined by EmbeddingsService
+      
+      // Create File node
+      // Small files: Store embedding directly on File node
+      // Large files: Store embeddings in FileChunk nodes
       const fileResult = await session.run(`
         MERGE (f:File:Node {path: $path})
         SET 
@@ -97,7 +123,8 @@ export class FileIndexer {
           f.last_modified = $last_modified,
           f.indexed_date = datetime(),
           f.type = 'file',
-          f.has_chunks = $has_chunks
+          f.has_chunks = $has_chunks,
+          f.content = $content
         RETURN f.path AS path, f.size_bytes AS size_bytes, id(f) AS node_id
       `, {
         path: relativePath,
@@ -108,61 +135,83 @@ export class FileIndexer {
         size_bytes: stats.size,
         line_count: content.split('\n').length,
         last_modified: stats.mtime.toISOString(),
-        has_chunks: generateEmbeddings && !hasExistingChunks
+        has_chunks: needsChunking,
+        content: needsChunking ? null : content // Store content for small files only
       });
 
       const fileNodeId = fileResult.records[0].get('node_id');
       let chunksCreated = 0;
 
-      // Generate and store chunk embeddings if enabled and not already present
+      // Generate and store embeddings if enabled and not already present
       if (generateEmbeddings && !hasExistingChunks) {
         await this.initEmbeddings();
         if (this.embeddingsService.isEnabled()) {
           try {
-            // Generate separate chunk embeddings (industry standard)
-            const chunkEmbeddings = await this.embeddingsService.generateChunkEmbeddings(content);
-            
-            // Create FileChunk nodes with embeddings
-            for (const chunk of chunkEmbeddings) {
+            if (needsChunking) {
+              // Large file: Generate separate chunk embeddings
+              const chunkEmbeddings = await this.embeddingsService.generateChunkEmbeddings(content);
+              
+              // Create FileChunk nodes with embeddings
+              for (const chunk of chunkEmbeddings) {
+                await session.run(`
+                  MATCH (f:File) WHERE id(f) = $fileNodeId
+                  CREATE (c:FileChunk:Node {
+                    chunk_index: $chunkIndex,
+                    text: $text,
+                    start_offset: $startOffset,
+                    end_offset: $endOffset,
+                    embedding: $embedding,
+                    embedding_dimensions: $dimensions,
+                    embedding_model: $model,
+                    type: 'file_chunk',
+                    indexed_date: datetime(),
+                    filePath: f.path,
+                    fileName: f.name,
+                    parentFileId: id(f)
+                  })
+                  CREATE (f)-[:HAS_CHUNK {index: $chunkIndex}]->(c)
+                  RETURN id(c) AS chunk_id
+                `, {
+                  fileNodeId,
+                  chunkIndex: chunk.chunkIndex,
+                  text: chunk.text,
+                  startOffset: chunk.startOffset,
+                  endOffset: chunk.endOffset,
+                  embedding: chunk.embedding,
+                  dimensions: chunk.dimensions,
+                  model: chunk.model
+                });
+                
+                chunksCreated++;
+              }
+              
+              console.log(`✅ Created ${chunksCreated} chunk embeddings for ${relativePath}`);
+            } else {
+              // Small file: Store embedding directly on File node
+              const embedding = await this.embeddingsService.generateEmbedding(content);
+              
               await session.run(`
                 MATCH (f:File) WHERE id(f) = $fileNodeId
-                CREATE (c:FileChunk:Node {
-                  chunk_index: $chunkIndex,
-                  text: $text,
-                  start_offset: $startOffset,
-                  end_offset: $endOffset,
-                  embedding: $embedding,
-                  embedding_dimensions: $dimensions,
-                  embedding_model: $model,
-                  type: 'file_chunk',
-                  indexed_date: datetime(),
-                  filePath: f.path,
-                  fileName: f.name,
-                  parentFileId: id(f)
-                })
-                CREATE (f)-[:HAS_CHUNK {index: $chunkIndex}]->(c)
-                RETURN id(c) AS chunk_id
+                SET 
+                  f.embedding = $embedding,
+                  f.embedding_dimensions = $dimensions,
+                  f.embedding_model = $model,
+                  f.has_embedding = true
               `, {
                 fileNodeId,
-                chunkIndex: chunk.chunkIndex,
-                text: chunk.text,
-                startOffset: chunk.startOffset,
-                endOffset: chunk.endOffset,
-                embedding: chunk.embedding,
-                dimensions: chunk.dimensions,
-                model: chunk.model
+                embedding: embedding.embedding,
+                dimensions: embedding.dimensions,
+                model: embedding.model
               });
               
-              chunksCreated++;
+              console.log(`✅ Created file embedding for ${relativePath}`);
             }
-            
-            console.log(`✅ Created ${chunksCreated} chunk embeddings for ${relativePath}`);
           } catch (error: any) {
-            console.warn(`⚠️  Failed to generate chunk embeddings for ${relativePath}: ${error.message}`);
+            console.warn(`⚠️  Failed to generate embeddings for ${relativePath}: ${error.message}`);
           }
         }
       } else if (generateEmbeddings && hasExistingChunks) {
-        console.log(`⏭️  Skipping chunk embeddings (already exist): ${relativePath}`);
+        console.log(`⏭️  Skipping embeddings (already exist): ${relativePath}`);
       }
       
       return {
@@ -173,15 +222,112 @@ export class FileIndexer {
       };
       
     } catch (error: any) {
-      // Skip binary files or files that can't be read as UTF-8
-      if (error.code === 'ERR_INVALID_ARG_TYPE' || error.message?.includes('invalid')) {
-        console.warn(`⚠️  Skipping binary file: ${filePath}`);
+      // Provide specific error messages for different skip reasons
+      const relativePath = path.relative(rootPath, filePath);
+      
+      if (error.message === 'Binary or non-indexable file') {
+        // Silently skip - these are expected
+        throw error;
+      }
+      
+      if (error.message === 'Binary content detected') {
+        console.warn(`⚠️  Skipping file with binary content: ${relativePath}`);
         throw new Error('Binary file');
       }
+      
+      // UTF-8 decode errors
+      if (error.code === 'ERR_INVALID_ARG_TYPE' || error.message?.includes('invalid')) {
+        console.warn(`⚠️  Skipping file (UTF-8 decode error): ${relativePath}`);
+        throw new Error('Binary file');
+      }
+      
       throw error;
     } finally {
       await session.close();
     }
+  }
+
+  /**
+   * Check if content is actually text (not binary)
+   */
+  private isTextContent(content: string): boolean {
+    // Check for null bytes (common in binary files)
+    if (content.includes('\0')) {
+      return false;
+    }
+    
+    // Check ratio of printable characters
+    let printableCount = 0;
+    const sampleSize = Math.min(content.length, 1000); // Check first 1000 chars
+    
+    for (let i = 0; i < sampleSize; i++) {
+      const code = content.charCodeAt(i);
+      // Printable ASCII + common whitespace/newlines
+      if ((code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13) {
+        printableCount++;
+      }
+    }
+    
+    const printableRatio = printableCount / sampleSize;
+    
+    // If less than 85% printable, likely binary
+    return printableRatio >= 0.85;
+  }
+
+  /**
+   * Check if file should be skipped (binary, images, archives, etc.)
+   * Note: PDF and DOCX are in this list but handled separately via DocumentParser
+   */
+  private shouldSkipFile(filePath: string, extension: string): boolean {
+    // Binary and non-text file extensions to skip
+    const skipExtensions = new Set([
+      // Images
+      '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg', '.webp', '.tiff', '.tif',
+      // Videos
+      '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v',
+      // Audio
+      '.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.wma',
+      // Archives
+      '.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.tgz',
+      // Executables and binaries
+      '.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.app',
+      // Compiled/bytecode
+      '.pyc', '.pyo', '.class', '.o', '.obj', '.wasm',
+      // Documents (binary formats) - PDF/DOCX supported via DocumentParser
+      '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
+      // Fonts
+      '.ttf', '.otf', '.woff', '.woff2', '.eot',
+      // Database files
+      '.db', '.sqlite', '.sqlite3', '.mdb',
+      // IDE/Editor files
+      '.swp', '.swo', '.DS_Store', '.idea',
+      // Lock files (often auto-generated)
+      '.lock',
+      // Other binary formats
+      '.pkl', '.pickle', '.parquet', '.avro', '.protobuf', '.pb'
+    ]);
+    
+    // Check extension
+    if (skipExtensions.has(extension)) {
+      return true;
+    }
+    
+    // Skip files without extension that are likely binary
+    const fileName = path.basename(filePath);
+    const binaryFileNames = new Set([
+      'package-lock.json', // Too large and auto-generated
+      'yarn.lock',         // Too large and auto-generated
+      'pnpm-lock.yaml',    // Too large and auto-generated
+      '.DS_Store',
+      'Thumbs.db',
+      'desktop.ini'
+    ]);
+    
+    if (binaryFileNames.has(fileName)) {
+      return true;
+    }
+    
+    return false;
   }
 
   /**

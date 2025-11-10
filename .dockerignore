@@ -9,3 +9,8 @@ testing
 # Ignore markdown except README.md
 *.md
 !README.md
+
+data
+logs
+copilot-data
+ollama_models

@@ -643,10 +643,10 @@ Please address the user's request using the provided context and your capabiliti
                 uri, auth=(username, password)
             ) as driver:
                 async with driver.session() as session:
-                    # Query for file chunks AND memory nodes with embeddings (manual cosine similarity for Neo4j Community Edition)
+                    # Query for file chunks, small files, AND memory nodes with embeddings (manual cosine similarity for Neo4j Community Edition)
                     cypher = """
                     CALL {
-                        // Search file chunks
+                        // Search file chunks (large files)
                         MATCH (file:File)-[:HAS_CHUNK]->(chunk:FileChunk)
                         WHERE chunk.embedding IS NOT NULL
                         WITH file, chunk,
@@ -657,6 +657,22 @@ Please address the user's request using the provided context and your capabiliti
                         WITH file.path AS source_path, file.name AS source_name, chunk.text AS content, 
                              chunk.start_offset AS start_offset, dotProduct / (normA * normB) AS similarity, 
                              'file_chunk' AS source_type
+                        WHERE similarity > 0.3
+                        RETURN content, start_offset, source_path, source_name, similarity, source_type
+                        
+                        UNION ALL
+                        
+                        // Search small files (no chunks, embedding on File node)
+                        MATCH (file:File)
+                        WHERE file.embedding IS NOT NULL AND file.has_chunks = false
+                        WITH file,
+                             reduce(dot = 0.0, i IN range(0, size(file.embedding)-1) | 
+                                dot + file.embedding[i] * $embedding[i]) AS dotProduct,
+                             sqrt(reduce(sum = 0.0, x IN file.embedding | sum + x * x)) AS normA,
+                             sqrt(reduce(sum = 0.0, x IN $embedding | sum + x * x)) AS normB
+                        WITH file.path AS source_path, file.name AS source_name, file.content AS content,
+                             0 AS start_offset, dotProduct / (normA * normB) AS similarity,
+                             'file' AS source_type
                         WHERE similarity > 0.3
                         RETURN content, start_offset, source_path, source_name, similarity, source_type
                         
