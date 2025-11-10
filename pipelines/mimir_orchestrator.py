@@ -104,15 +104,7 @@ class Pipe:
         self.name = "Mimir"
         self.valves = self.Valves()
 
-        # Request deduplication using unique request IDs
-        # Track processed requests to prevent multiple executions
-        self.processed_requests = set()
-        self._cleanup_interval = 100  # Clean up every 100 requests
-        self._request_counter = 0
-        
-        # Async lock for atomic cache operations (prevents race conditions)
-        import asyncio
-        self._cache_lock = asyncio.Lock()
+        # Duplicate detection removed - process all requests
         
         # Global tracking (class-level, survives across instances)
         if not hasattr(self.__class__, '_global_execution_count'):
@@ -581,30 +573,6 @@ graph LR
         if is_auto_generated:
             print(f"⏭️  Skipping auto-generated request: {user_message[:50]}...")
             return
-        
-        # DEDUPLICATION: Use message content + chat context
-        chat_id = body.get("chat_id", body.get("id", "default"))
-        fingerprint_input = f"{user_message}:{chat_id}"
-        request_fingerprint = hashlib.md5(fingerprint_input.encode()).hexdigest()[:12]
-        
-        # ATOMIC CACHE CHECK (prevents race conditions with parallel calls)
-        async with self._cache_lock:
-            # Check if we've already processed this request
-            if request_fingerprint in self.processed_requests:
-                print(f"⏭️  DUPLICATE REQUEST DETECTED - Skipping: {request_fingerprint}")
-                return
-            
-            # Mark this request as processed IMMEDIATELY (while holding lock)
-            self.processed_requests.add(request_fingerprint)
-        
-        print(f"✅ Processing NEW request: {request_fingerprint} (model: {model_id})")
-        
-        # Periodic cleanup
-        self._request_counter += 1
-        if self._request_counter >= self._cleanup_interval:
-            self.processed_requests.clear()
-            self._request_counter = 0
-            print(f"🧹 Cleaned up processed requests cache")
         
         # Validate messages
         if not messages:

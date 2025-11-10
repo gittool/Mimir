@@ -69,10 +69,7 @@ class Pipe:
         self.name = "Mimir RAG Auto"
         self.valves = self.Valves()
 
-        # Request deduplication using unique request IDs
-        self.processed_requests = set()
-        self._cleanup_interval = 100
-        self._request_counter = 0
+        # Duplicate detection removed - process all requests
 
         # Load Claudette-Auto preamble
         self.agent_preamble = self._load_claudette_auto_preamble()
@@ -472,36 +469,7 @@ When stuck or when solutions introduce new problems:
         current_time = int(time.time())
         time_window = current_time // 5
         
-        request_fingerprint = hashlib.md5(
-            f"{user_message}:{model_id}:{time_window}".encode()
-        ).hexdigest()[:12]
-        
-        yield f"**Request Fingerprint:** `{request_fingerprint}`\n\n"
-        yield f"**Time Window:** `{time_window}`\n\n"
-        yield f"**Processed Requests in Cache:** {len(self.processed_requests)}\n\n"
-        yield f"**Cache Contents:** `{list(self.processed_requests)}`\n\n"
-        
-        if request_fingerprint in self.processed_requests:
-            yield f"### ⏭️ **DUPLICATE REQUEST DETECTED**\n\n"
-            yield f"Fingerprint `{request_fingerprint}` already processed. Skipping.\n\n"
-            yield "---\n\n"
-            print(f"⏭️  DUPLICATE REQUEST DETECTED - Skipping: {request_fingerprint}")
-            return
-        
-        self.processed_requests.add(request_fingerprint)
-        yield f"### ✅ **NEW REQUEST - WILL EXECUTE**\n\n"
-        yield f"Added fingerprint `{request_fingerprint}` to cache.\n\n"
-        yield f"**Updated Cache Size:** {len(self.processed_requests)}\n\n"
-        yield "---\n\n"
-        
-        print(f"✅ Processing NEW request: {request_fingerprint} (model: {model_id})")
-        
-        self._request_counter += 1
-        if self._request_counter >= self._cleanup_interval:
-            self.processed_requests.clear()
-            self._request_counter = 0
-            yield f"🧹 **Cache Cleanup:** Cleared cache\n\n"
-            print(f"🧹 Cleaned up processed requests cache")
+        # Duplicate detection removed - process all requests
         
         # ========== END DEBUG OUTPUT ==========
         
