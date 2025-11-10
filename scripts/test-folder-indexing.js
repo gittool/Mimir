@@ -25,6 +25,7 @@ const MCP_PORT = process.env.MCP_PORT || 9042;
 // Parse command line arguments
 const args = process.argv.slice(2);
 const folderPath = args.find(arg => !arg.startsWith('--'));
+const addFlag = args.includes('--add');
 const removeFlag = args.includes('--remove');
 const embeddingsFlag = args.includes('--embeddings');
 const listFlag = args.includes('--list');
@@ -176,9 +177,13 @@ async function initializeSession() {
 /**
  * Call MCP tool endpoint
  */
-async function callTool(toolName, params) {
-  logSection(`Calling Tool: ${toolName}`);
-  log(`Parameters: ${JSON.stringify(params, null, 2)}`, 'cyan');
+async function callTool(toolName, params, silent = false) {
+  if (!silent) {
+    logSection(`Calling Tool: ${toolName}`);
+    if (Object.keys(params).length > 0) {
+      log(`Parameters: ${JSON.stringify(params, null, 2)}`, 'cyan');
+    }
+  }
   
   const requestBody = {
     jsonrpc: '2.0',
@@ -203,13 +208,50 @@ async function callTool(toolName, params) {
       return null;
     }
 
-    log('\n✅ Success!', 'green');
-    console.log(JSON.stringify(data.result, null, 2));
+    if (!silent) {
+      log('\n✅ Tool call successful', 'green');
+    }
     
     return data.result;
   } catch (error) {
     log(`\n❌ Request failed: ${error.message}`, 'red');
     throw error;
+  }
+}
+
+/**
+ * Format Neo4j datetime to readable string
+ */
+function formatDateTime(dt) {
+  if (!dt || !dt.year) return 'N/A';
+  
+  const year = dt.year.low || dt.year;
+  const month = String(dt.month.low || dt.month).padStart(2, '0');
+  const day = String(dt.day.low || dt.day).padStart(2, '0');
+  const hour = String(dt.hour.low || dt.hour).padStart(2, '0');
+  const minute = String(dt.minute.low || dt.minute).padStart(2, '0');
+  const second = String(dt.second.low || dt.second).padStart(2, '0');
+  
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+/**
+ * Parse MCP tool result content
+ */
+function parseToolResult(result) {
+  if (!result || !result.content || !Array.isArray(result.content)) {
+    return null;
+  }
+  
+  const textContent = result.content.find(c => c.type === 'text');
+  if (!textContent || !textContent.text) {
+    return null;
+  }
+  
+  try {
+    return JSON.parse(textContent.text);
+  } catch (error) {
+    return null;
   }
 }
 
@@ -220,16 +262,23 @@ async function listWatchedFolders() {
   logSection('Listing Watched Folders');
   
   const result = await callTool('list_folders', {});
+  const data = parseToolResult(result);
   
-  if (result && result.watches) {
-    console.log(`\nTotal watched folders: ${result.total}`);
-    result.watches.forEach((watch, index) => {
-      console.log(`\n${index + 1}. ${watch.folder}`);
-      console.log(`   Container Path: ${watch.containerPath}`);
-      console.log(`   Files Indexed: ${watch.files_indexed}`);
-      console.log(`   Last Update: ${watch.last_update}`);
-      console.log(`   Active: ${watch.active}`);
+  if (data && data.watches) {
+    log(`\n📊 Total watched folders: ${data.total}`, 'cyan');
+    
+    data.watches.forEach((watch, index) => {
+      console.log(`\n${colors.bright}${index + 1}. ${watch.folder}${colors.reset}`);
+      log(`   📂 Container Path: ${watch.containerPath}`, 'cyan');
+      log(`   📄 Files Indexed: ${watch.files_indexed}`, 'green');
+      log(`   🕐 Last Update: ${formatDateTime(watch.last_update)}`, 'yellow');
+      log(`   ${watch.active ? '✅' : '❌'} Status: ${watch.active ? 'Active' : 'Inactive'}`, watch.active ? 'green' : 'red');
+      if (watch.watch_id) {
+        log(`   🔑 Watch ID: ${watch.watch_id}`, 'blue');
+      }
     });
+  } else {
+    log('\n📭 No folders are currently being watched', 'yellow');
   }
 }
 
@@ -249,17 +298,21 @@ async function addFolder(folderPath, withEmbeddings = false) {
   };
 
   const result = await callTool('index_folder', params);
+  const data = parseToolResult(result);
   
-  if (result && result.status === 'success') {
-    log('\n📁 Folder added successfully!', 'green');
-    log(`Path: ${result.path}`, 'cyan');
-    log(`Container Path: ${result.containerPath}`, 'cyan');
-    log(`Message: ${result.message}`, 'cyan');
+  if (data && data.status === 'success') {
+    log('\n✅ Folder added successfully!', 'green');
+    log(`📂 Host Path: ${data.path}`, 'cyan');
+    log(`📦 Container Path: ${data.containerPath}`, 'cyan');
+    log(`💬 ${data.message}`, 'yellow');
     
     if (withEmbeddings) {
       log('\n⏳ Background indexing with embeddings in progress...', 'yellow');
-      log('This may take a while depending on the number of files.', 'yellow');
+      log('   This may take a while depending on the number of files.', 'yellow');
+      log('   Use "npm run index:stats" to check progress.', 'cyan');
     }
+  } else if (data && data.status === 'error') {
+    log(`\n❌ Error: ${data.message}`, 'red');
   }
 }
 
@@ -275,13 +328,16 @@ async function removeFolder(folderPath) {
   };
 
   const result = await callTool('remove_folder', params);
+  const data = parseToolResult(result);
   
-  if (result && result.status === 'success') {
-    log('\n🗑️  Folder removed successfully!', 'green');
-    log(`Path: ${result.path}`, 'cyan');
-    log(`Container Path: ${result.containerPath}`, 'cyan');
-    log(`Files Removed: ${result.files_removed}`, 'cyan');
-    log(`Chunks Removed: ${result.chunks_removed}`, 'cyan');
+  if (data && data.status === 'success') {
+    log('\n✅ Folder removed successfully!', 'green');
+    log(`📂 Host Path: ${data.path}`, 'cyan');
+    log(`📦 Container Path: ${data.containerPath}`, 'cyan');
+    log(`🗑️  Files Removed: ${data.files_removed}`, 'red');
+    log(`🗑️  Chunks Removed: ${data.chunks_removed}`, 'red');
+  } else if (data && data.status === 'error') {
+    log(`\n❌ Error: ${data.message}`, 'red');
   }
 }
 
@@ -292,15 +348,26 @@ async function getEmbeddingStats() {
   logSection('Embedding Statistics');
   
   const result = await callTool('get_embedding_stats', {});
+  const data = parseToolResult(result);
   
-  if (result) {
-    log(`\nTotal nodes with embeddings: ${result.total_nodes_with_embeddings}`, 'cyan');
-    if (result.breakdown_by_type) {
-      log('\nBreakdown by type:', 'yellow');
-      Object.entries(result.breakdown_by_type).forEach(([type, count]) => {
-        console.log(`  ${type}: ${count}`);
+  if (data) {
+    log(`\n🔢 Total nodes with embeddings: ${data.total_nodes_with_embeddings.toLocaleString()}`, 'cyan');
+    
+    if (data.breakdown_by_type) {
+      log('\n📊 Breakdown by type:', 'yellow');
+      
+      // Sort by count descending
+      const sorted = Object.entries(data.breakdown_by_type)
+        .sort(([, a], [, b]) => b - a);
+      
+      sorted.forEach(([type, count]) => {
+        const percentage = ((count / data.total_nodes_with_embeddings) * 100).toFixed(1);
+        const bar = '█'.repeat(Math.floor(percentage / 2));
+        log(`   ${type.padEnd(15)} ${String(count).padStart(6)} (${percentage.padStart(5)}%) ${bar}`, 'green');
       });
     }
+  } else {
+    log('\n📭 No embedding statistics available', 'yellow');
   }
 }
 
@@ -342,7 +409,7 @@ async function main() {
       process.exit(1);
     } else if (removeFlag) {
       await removeFolder(folderPath);
-    } else {
+    } else if (addFlag) {
       await addFolder(folderPath, embeddingsFlag);
       
       // Show embedding stats if embeddings were enabled
