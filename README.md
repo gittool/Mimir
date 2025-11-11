@@ -388,13 +388,19 @@ npm run index:add /path/to/project
 # Check Ollama is running
 curl http://localhost:11434/api/tags
 
-# Pull embedding model
-docker exec -it ollama_server ollama pull mxbai-embed-large
-
 # Verify model is available
 docker exec -it ollama_server ollama list | grep mxbai
-```
 
+# If Ollama is running but the embedding model isn't present (or you see
+# embedding errors at runtime), you can pull the model using the npm helper
+# script instead of calling Docker directly. Default model for code embeddings:
+# `mxbai-embed-large`
+npm run ollama:pull mxbai-embed-large
+
+# or Pull embedding model manually
+
+docker exec -it ollama_server ollama pull mxbai-embed-large
+```
 ### HTTP API
 
 Access the MCP server via HTTP for custom integrations:
