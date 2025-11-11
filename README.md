@@ -399,6 +399,29 @@ docker exec -it ollama_server ollama list | grep mxbai
 
 Access the MCP server via HTTP for custom integrations:
 
+## Apple Silicon (temporary Copilot API workaround)
+
+If you're running this project on Apple Silicon (M1/M2) and a prebuilt `copilot-api` Docker image for Apple Silicon is not yet available, you can run the Copilot-compatible API locally as a temporary workaround.
+
+1) Install the Copilot API CLI globally (requires npm):
+
+```bash
+npm install -g copilot-api
+```
+
+2) Start the Copilot API in the background (keeps your terminal free):
+
+```bash
+copilot-api start &
+```
+
+Notes:
+- The local `copilot-api` CLI will listen on `localhost:4141` by default. Docker services in this repo already assume the host Copilot API is available at `host.docker.internal:4141` (see `docker-compose.yml` and `docker-compose.silicon.yml`).
+- Once you have a native Apple Silicon Docker image for `timothyswt/copilot-api`, you can remove the local CLI workaround and run the service as a container instead.
+
+This step is only required until an Apple Silicon compatible Docker image is available.
+
+
 ```bash
 # Initialize session
 curl -X POST http://localhost:9042/mcp \

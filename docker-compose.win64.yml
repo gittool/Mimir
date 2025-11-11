@@ -25,26 +25,26 @@ services:
     networks:
       - mcp_network
 
-  # copilot-api:
-  #   image: timothyswt/copilot-api:latest
-  #   container_name: copilot_api_server
-  #   ports:
-  #     - "4141:4141"  # Fixed: copilot-api listens on 4141, not 3000
-  #   volumes:
-  #     - ./copilot-data:/root/.local/share/copilot-api  # Persist GitHub token
-  #   environment:
-  #     - NODE_ENV=production
-  #     # Remove PORT=3000, the app uses 4141 by default
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     # Use CMD-SHELL so shell operators (||) work and allow a proper HTTP probe
-  #     test: ["CMD-SHELL", "wget --spider -q http://localhost:4141/ || exit 1"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 5
-  #     start_period: 15s
-  #   networks:
-  #     - mcp_network
+  copilot-api:
+    image: timothyswt/copilot-api:latest
+    container_name: copilot_api_server
+    ports:
+      - "4141:4141"  # Fixed: copilot-api listens on 4141, not 3000
+    volumes:
+      - ./copilot-data:/root/.local/share/copilot-api  # Persist GitHub token
+    environment:
+      - NODE_ENV=production
+      # Remove PORT=3000, the app uses 4141 by default
+    restart: unless-stopped
+    healthcheck:
+      # Use CMD-SHELL so shell operators (||) work and allow a proper HTTP probe
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:4141/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - mcp_network
 
   ollama:
     build:
@@ -88,13 +88,13 @@ services:
     networks:
       - mcp_network
     # Uncomment if you have GPU support (NVIDIA)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   mcp-server:
     build:
@@ -125,8 +125,8 @@ services:
       # LLM Configuration
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       # - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      # - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://copilot-api:4141/v1}
-      - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://host.docker.internal:4141/v1}
+      - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://copilot-api:4141/v1}
+      # - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://host.docker.internal:4141/v1}
       
       # Feature Flags (override .mimir/llm-config.json)
       - MIMIR_FEATURE_PM_MODEL_SUGGESTIONS=${MIMIR_FEATURE_PM_MODEL_SUGGESTIONS:-false}
@@ -139,7 +139,7 @@ services:
       - MIMIR_EMBEDDINGS_DIMENSIONS=${MIMIR_EMBEDDINGS_DIMENSIONS:-1024}
       - MIMIR_EMBEDDINGS_CHUNK_SIZE=${MIMIR_EMBEDDINGS_CHUNK_SIZE:-1024}
       - MIMIR_EMBEDDINGS_CHUNK_OVERLAP=${MIMIR_EMBEDDINGS_CHUNK_OVERLAP:-100}
-      - MIMIR_EMBEDDINGS_DELAY_MS=${MIMIR_EMBEDDINGS_DELAY_MS:-1}
+      - MIMIR_EMBEDDINGS_DELAY_MS=${MIMIR_EMBEDDINGS_DELAY_MS:-200}
       - MIMIR_EMBEDDINGS_MAX_RETRIES=${MIMIR_EMBEDDINGS_MAX_RETRIES:-3}
     volumes:
       - ./data:/app/data
@@ -156,8 +156,8 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
-      # copilot-api:
-      #   condition: service_healthy
+      copilot-api:
+        condition: service_healthy
       # Ollama is required for embeddings but you can use a local server
       ollama:
         condition: service_healthy
@@ -180,8 +180,7 @@ services:
       - open-webui:/app/backend/data
     environment:
       # OpenAI-Compatible API Configuration (Copilot API)
-      # - OPENAI_API_BASE_URL=http://copilot-api:4141/v1
-      - OPENAI_API_BASE_URL=http://host.docker.internal:4141/v1
+      - OPENAI_API_BASE_URL=http://copilot-api:4141/v1
       - OPENAI_API_KEY=sk-copilot-dummy  # Dummy key for copilot-api
       
       # Disable Ollama (using Copilot API instead)
@@ -197,7 +196,7 @@ services:
       - ENABLE_OPENAI_API=true
     depends_on:
       - mcp-server
-      # - copilot-api
+      - copilot-api
     networks:
       - mcp_network
     restart: unless-stopped
