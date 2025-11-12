@@ -405,9 +405,9 @@ docker exec -it ollama_server ollama pull nomic-embed-text
 
 Access the MCP server via HTTP for custom integrations:
 
-## Apple Silicon (temporary Copilot API workaround) 🚀FIXED
+## Apple Silicon (temporary Copilot API workaround) 🚀 FIXED
 
-| The default docker-compose.yml is for apple silicon. I publsihed a built image in docker hunbunder timothyswt/copilot-api. you dont need it, it just helps you use an openapi-compatible endpoint using your copilot license.
+> The default docker-compose.yml is for apple silicon. I publsihed a built image in docker hunbunder timothyswt/copilot-api. you dont need it, it just helps you use an openapi-compatible endpoint using your copilot license.
 
 If you're running this project on Apple Silicon (M1/M2) and a prebuilt `copilot-api` Docker image for Apple Silicon is not yet available, you can run the Copilot-compatible API locally as a temporary workaround.
 
@@ -477,8 +477,8 @@ When you run `docker compose up -d`, you get these services:
 | **MCP Server** | 9042 | Main API server | http://localhost:9042 |
 | **Ollama** (optional*) | 11434 | Local embeddings | http://localhost:11434 |
 
-| Ollama is optional but you wont get semantic search unless you provide embeddings. you can point the indexing at any compatible embeddings endpoint. Or, youll have to fall back to basic text search
-| copliot-api isnt required for the menory bank. But, it is required if you want to do agent orchestration with it. 
+> Ollama is optional but you wont get semantic search unless you provide embeddings. you can point the indexing at any compatible embeddings endpoint. Or, youll have to fall back to basic text search
+> copliot-api isnt required for the menory bank. But, it is required if you want to do agent orchestration with it. 
 
 ### How It Works
 
