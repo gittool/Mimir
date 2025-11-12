@@ -11,10 +11,17 @@ try {
 
   const env = { ...process.env, VERSION: version };
 
-  const result = spawnSync('docker-compose', ['build', 'mcp-server'], { stdio: 'inherit', env });
+  // Try 'docker compose' first (modern Docker Desktop), then fall back to 'docker-compose'
+  let result = spawnSync('docker', ['compose', 'build', 'mcp-server'], { stdio: 'inherit', env });
+
+  if (result.error && result.error.code === 'ENOENT') {
+    console.log('Trying docker-compose (legacy)...');
+    result = spawnSync('docker-compose', ['build', 'mcp-server'], { stdio: 'inherit', env });
+  }
 
   if (result.error) {
-    console.error('Failed to run docker-compose:', result.error);
+    console.error('Failed to run docker compose:', result.error);
+    console.error('\nMake sure Docker Desktop is installed and running.');
     process.exit(result.status || 1);
   }
 

@@ -20,7 +20,7 @@ Examples:
 - Add: memory_node(operation='add', type='memory', properties={title: 'X', content: 'Y'})
 - Get: memory_node(operation='get', id='memory-123')
 - Query: memory_node(operation='query', type='todo', filters={status: 'pending'})
-- Search: memory_node(operation='search', query='authentication code') [exact text match]`,
+- Search: memory_node(operation='search', query='authentication code') [semantic search by default, automatic fallback to keyword search if embeddings disabled or no results found]`,
     inputSchema: {
       type: "object",
       properties: {
@@ -50,7 +50,7 @@ Examples:
         },
         query: {
           type: "string",
-          description: "Search query text for search operation (full-text search)"
+          description: "Search query text for search operation (semantic search with automatic fallback to keyword search)"
         },
         options: {
           type: "object",

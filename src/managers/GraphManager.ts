@@ -3,7 +3,7 @@
 // Clean, simple, unified node model
 // ============================================================================
 
-import neo4j, { Driver, Session, Integer } from 'neo4j-driver';
+import neo4j, { Driver } from 'neo4j-driver';
 import type {
   IGraphManager,
   Node,
@@ -17,13 +17,16 @@ import type {
   ClearType
 } from '../types/index.js';
 import { EmbeddingsService } from '../indexing/EmbeddingsService.js';
+import { UnifiedSearchService } from './UnifiedSearchService.js';
 import { flattenForMCP } from '../tools/mcp/flattenForMCP.js';
+import { LLMConfigLoader } from '../config/LLMConfigLoader.js';
 
 export class GraphManager implements IGraphManager {
   private driver: Driver;
   private nodeCounter = 0;
   private edgeCounter = 0;
   private embeddingsService: EmbeddingsService | null = null;
+  private unifiedSearchService: UnifiedSearchService;
 
   constructor(uri: string, user: string, password: string) {
     this.driver = neo4j.driver(
@@ -41,6 +44,12 @@ export class GraphManager implements IGraphManager {
     this.embeddingsService.initialize().catch(err => {
       console.warn('⚠️  Failed to initialize embeddings service:', err.message);
       this.embeddingsService = null;
+    });
+    
+    // Initialize unified search service
+    this.unifiedSearchService = new UnifiedSearchService(this.driver);
+    this.unifiedSearchService.initialize().catch(err => {
+      console.warn('⚠️  Failed to initialize unified search service:', err.message);
     });
   }
 
@@ -116,12 +125,19 @@ export class GraphManager implements IGraphManager {
         FOR (c:FileChunk) ON EACH [c.text]
       `);
 
-      // Vector index for semantic search (1024 dimensions for nomic-embed-text)
+      // Vector index for semantic search - dimensions from config
+      // Get dimensions from embeddings config (default: 768 for nomic-embed-text)
+      const configLoader = LLMConfigLoader.getInstance();
+      const embeddingsConfig = await configLoader.getEmbeddingsConfig();
+      const dimensions = embeddingsConfig?.dimensions || 768;
+      
+      console.log(`🔧 Creating vector index with ${dimensions} dimensions`);
+      
       await session.run(`
         CREATE VECTOR INDEX node_embedding_index IF NOT EXISTS
         FOR (n:Node) ON (n.embedding)
         OPTIONS {indexConfig: {
-          \`vector.dimensions\`: 1024,
+          \`vector.dimensions\`: ${dimensions},
           \`vector.similarity_function\`: 'cosine'
         }}
       `);
@@ -640,28 +656,31 @@ export class GraphManager implements IGraphManager {
   }
 
   async searchNodes(query: string, options: SearchOptions = {}): Promise<Node[]> {
+    // Use UnifiedSearchService for automatic semantic/fulltext fallback
+    await this.unifiedSearchService.initialize();
+    
+    const searchResult = await this.unifiedSearchService.search(query, {
+      types: options.types,
+      limit: options.limit || 100,
+      minSimilarity: 0.5, // Default threshold
+      offset: options.offset || 0
+    });
+    
+    // Convert SearchResult[] to Node[] format
+    // Note: UnifiedSearchService returns formatted results, we need to fetch full nodes
+    if (searchResult.results.length === 0) {
+      return [];
+    }
+    
     const session = this.driver.session();
     try {
-      const limit = options.limit || 100;
-      const offset = options.offset || 0;
-
-      // Search across string properties only to avoid type errors with arrays
-      // This searches: path, language, content, name, description, status, priority, etc.
+      // Get full node data for the IDs returned by search
+      const ids = searchResult.results.map(r => r.id);
+      
       const result = await session.run(
         `
         MATCH (n)
-        WHERE (
-          (n.path IS NOT NULL AND toLower(n.path) CONTAINS toLower($query)) OR
-          (n.language IS NOT NULL AND toLower(n.language) CONTAINS toLower($query)) OR
-          (n.content IS NOT NULL AND toLower(n.content) CONTAINS toLower($query)) OR
-          (n.name IS NOT NULL AND toLower(n.name) CONTAINS toLower($query)) OR
-          (n.description IS NOT NULL AND toLower(n.description) CONTAINS toLower($query)) OR
-          (n.status IS NOT NULL AND toLower(n.status) CONTAINS toLower($query)) OR
-          (n.priority IS NOT NULL AND toLower(n.priority) CONTAINS toLower($query)) OR
-          (n.type IS NOT NULL AND toLower(n.type) CONTAINS toLower($query))
-        )
-        ${options.types && options.types.length > 0 ? `AND (n.type IN $types OR ANY(t IN $types WHERE (toUpper(left(t, 1)) + substring(t, 1)) IN labels(n)))` : ''}
-        WITH n
+        WHERE (n.id IN $ids OR n.path IN $ids)
         RETURN n {
           .*, 
           embedding: null,
@@ -670,31 +689,31 @@ export class GraphManager implements IGraphManager {
             THEN null 
             ELSE n.content 
           END,
+          text: CASE 
+            WHEN size(coalesce(n.text, '')) > 1000 
+            THEN null 
+            ELSE n.text 
+          END,
           _contentStripped: CASE 
-            WHEN size(coalesce(n.content, '')) > 1000 
+            WHEN size(coalesce(n.content, '')) > 1000 OR size(coalesce(n.text, '')) > 1000
             THEN true 
             ELSE null 
           END,
           _contentLength: CASE 
-            WHEN size(coalesce(n.content, '')) > 1000 
-            THEN size(n.content) 
+            WHEN size(coalesce(n.content, '')) > 1000 THEN size(n.content)
+            WHEN size(coalesce(n.text, '')) > 1000 THEN size(n.text)
             ELSE null 
           END,
           relevantLines: CASE
             WHEN size(coalesce(n.content, '')) > 1000 AND n.content IS NOT NULL
             THEN [line IN split(n.content, '\\n') WHERE toLower(line) CONTAINS toLower($query) | line][0..10]
+            WHEN size(coalesce(n.text, '')) > 1000 AND n.text IS NOT NULL
+            THEN [line IN split(n.text, '\\n') WHERE toLower(line) CONTAINS toLower($query) | line][0..10]
             ELSE null
           END
         } as n
-        SKIP $offset
-        LIMIT $limit
         `,
-        { 
-          query, 
-          types: options.types || [], 
-          offset: neo4j.int(offset), 
-          limit: neo4j.int(limit) 
-        }
+        { ids, query }
       );
 
       return result.records.map(r => this.nodeFromRecord(r.get('n'), undefined, false));

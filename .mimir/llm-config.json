@@ -275,8 +275,8 @@
     "enabled": true,
     "provider": "ollama",
     "model": "nomic-embed-text",
-    "dimensions": 1024,
-    "chunkSize": 1024,
+    "dimensions": 768,
+    "chunkSize": 400,
     "chunkOverlap": 100
   },
   "features": {

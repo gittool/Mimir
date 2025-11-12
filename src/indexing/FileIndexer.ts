@@ -108,6 +108,12 @@ export class FileIndexer {
       // Determine if file needs chunking (based on embeddings config chunk size)
       const needsChunking = generateEmbeddings && content.length > 1000; // Will be refined by EmbeddingsService
       
+      // Storage strategy:
+      // - If embeddings ENABLED and file is LARGE → Store in chunks (chunk nodes) + no content on File node
+      // - If embeddings DISABLED → ALWAYS store full content on File node (enables full-text search)
+      // - If embeddings ENABLED and file is SMALL → Store content on File node + embedding
+      const shouldStoreFullContent = !generateEmbeddings || !needsChunking;
+      
       // Create File node
       // Small files: Store embedding directly on File node
       // Large files: Store embeddings in FileChunk nodes
@@ -136,7 +142,7 @@ export class FileIndexer {
         line_count: content.split('\n').length,
         last_modified: stats.mtime.toISOString(),
         has_chunks: needsChunking,
-        content: needsChunking ? null : content // Store content for small files only
+        content: shouldStoreFullContent ? content : null // Store full content when embeddings disabled OR file is small
       });
 
       const fileNodeId = fileResult.records[0].get('node_id');
@@ -151,28 +157,34 @@ export class FileIndexer {
               // Large file: Generate separate chunk embeddings
               const chunkEmbeddings = await this.embeddingsService.generateChunkEmbeddings(content);
               
-              // Create FileChunk nodes with embeddings
+              // Create FileChunk nodes with embeddings and sequential relationships
+              let previousChunkId: string | null = null;
+              
               for (const chunk of chunkEmbeddings) {
-                await session.run(`
+                // Generate unique chunk ID
+                const chunkId = `chunk-${relativePath}-${chunk.chunkIndex}`;
+                
+                const result = await session.run(`
                   MATCH (f:File) WHERE id(f) = $fileNodeId
-                  CREATE (c:FileChunk:Node {
-                    chunk_index: $chunkIndex,
-                    text: $text,
-                    start_offset: $startOffset,
-                    end_offset: $endOffset,
-                    embedding: $embedding,
-                    embedding_dimensions: $dimensions,
-                    embedding_model: $model,
-                    type: 'file_chunk',
-                    indexed_date: datetime(),
-                    filePath: f.path,
-                    fileName: f.name,
-                    parentFileId: id(f)
-                  })
+                  CREATE (c:FileChunk:Node)
+                  SET c.id = $chunkId,
+                      c.chunk_index = $chunkIndex,
+                      c.text = $text,
+                      c.start_offset = $startOffset,
+                      c.end_offset = $endOffset,
+                      c.embedding = $embedding,
+                      c.embedding_dimensions = $dimensions,
+                      c.embedding_model = $model,
+                      c.type = 'file_chunk',
+                      c.indexed_date = datetime(),
+                      c.filePath = f.path,
+                      c.fileName = f.name,
+                      c.parentFileId = id(f)
                   CREATE (f)-[:HAS_CHUNK {index: $chunkIndex}]->(c)
-                  RETURN id(c) AS chunk_id
+                  RETURN c.id AS chunk_id
                 `, {
                   fileNodeId,
+                  chunkId,
                   chunkIndex: chunk.chunkIndex,
                   text: chunk.text,
                   startOffset: chunk.startOffset,
@@ -182,10 +194,25 @@ export class FileIndexer {
                   model: chunk.model
                 });
                 
+                const currentChunkId = result.records[0].get('chunk_id');
+                
+                // Create NEXT_CHUNK relationship from previous chunk to current
+                if (previousChunkId) {
+                  await session.run(`
+                    MATCH (prev:FileChunk {id: $prevId})
+                    MATCH (curr:FileChunk {id: $currId})
+                    CREATE (prev)-[:NEXT_CHUNK]->(curr)
+                  `, {
+                    prevId: previousChunkId,
+                    currId: currentChunkId
+                  });
+                }
+                
+                previousChunkId = currentChunkId;
                 chunksCreated++;
               }
               
-              console.log(`✅ Created ${chunksCreated} chunk embeddings for ${relativePath}`);
+              console.log(`✅ Created ${chunksCreated} chunk embeddings with sequential links for ${relativePath}`);
             } else {
               // Small file: Store embedding directly on File node
               const embedding = await this.embeddingsService.generateEmbedding(content);

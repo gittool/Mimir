@@ -4,9 +4,10 @@
 
 import { GraphManager } from './GraphManager.js';
 import { TodoManager } from './TodoManager.js';
+import { UnifiedSearchService } from './UnifiedSearchService.js';
 import type { IGraphManager } from '../types/index.js';
 
-export { GraphManager, TodoManager };
+export { GraphManager, TodoManager, UnifiedSearchService };
 export type { IGraphManager };
 
 /**

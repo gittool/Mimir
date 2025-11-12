@@ -1,23 +1,21 @@
 /**
  * @file src/tools/vectorSearch.tools.ts
  * @description Vector search MCP tools for semantic file search
+ * Now uses UnifiedSearchService for automatic fallback to full-text search
  */
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Driver } from 'neo4j-driver';
-import { EmbeddingsService } from '../indexing/EmbeddingsService.js';
+import { UnifiedSearchService } from '../managers/UnifiedSearchService.js';
 
 export function createVectorSearchTools(driver: Driver): Tool[] {
-  const embeddingsService = new EmbeddingsService();
-  let initialized = false;
-
   return [
     // ========================================================================
     // vector_search_nodes
     // ========================================================================
     {
       name: 'vector_search_nodes',
-      description: 'Semantic search across all nodes using vector embeddings. Returns nodes most similar to the query by MEANING (not exact text match). For files, searches individual chunks and returns parent file context. Use this to find related concepts, similar problems, or relevant context when you don\'t know exact keywords. Works with todos, memories, file chunks, and all other node types. Complements memory_node search (which finds exact text matches).',
+      description: 'Semantic search across all nodes using vector embeddings (with automatic fallback to full-text search). Returns nodes most similar to the query by MEANING (not exact text match). If embeddings are disabled or no results found, automatically falls back to keyword search. For files, searches individual chunks and returns parent file context. Use this to find related concepts, similar problems, or relevant context when you don\'t know exact keywords. Works with todos, memories, file chunks, and all other node types.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -62,144 +60,30 @@ export function createVectorSearchTools(driver: Driver): Tool[] {
 
 /**
  * Handle vector_search_nodes tool call
+ * Uses UnifiedSearchService for automatic fallback
  */
 export async function handleVectorSearchNodes(
   params: any,
   driver: Driver
 ): Promise<any> {
-  const embeddingsService = new EmbeddingsService();
-  await embeddingsService.initialize();
-
-  if (!embeddingsService.isEnabled()) {
-    return {
-      status: 'error',
-      message: 'Vector embeddings not enabled. Set features.vectorEmbeddings=true in .mimir/llm-config.json'
-    };
-  }
-
-  const session = driver.session();
+  const searchService = new UnifiedSearchService(driver);
+  await searchService.initialize();
   
   try {
-    // Generate embedding for query
-    const queryEmbedding = await embeddingsService.generateEmbedding(params.query);
-
-    const limit = Math.floor(params.limit || 5);
-    const minSimilarity = params.min_similarity || 0.5;
-
-    // Build type filter if provided
-    let typeFilter = '';
-    const queryParams: any = {
-      queryVector: queryEmbedding.embedding,
-      limit: Math.floor(limit * 2) // Get more candidates for filtering
-    };
-    
-    if (params.types && Array.isArray(params.types) && params.types.length > 0) {
-      typeFilter = 'AND node.type IN $types';
-      queryParams.types = params.types;
-    }
-
-    // Use Neo4j's native vector similarity search
-    // Note: Neo4j requires integer parameters, not floats
-    const result = await session.run(`
-      CALL db.index.vector.queryNodes('node_embedding_index', toInteger($limit), $queryVector)
-      YIELD node, score
-      WHERE score >= $minSimilarity ${typeFilter}
-      
-      // For FileChunk nodes, get parent File information
-      OPTIONAL MATCH (node)<-[:HAS_CHUNK]-(parentFile:File)
-      
-      RETURN COALESCE(node.id, node.path) AS id,
-             node.type AS type,
-             COALESCE(node.title, node.name) AS title,
-             node.name AS name,
-             node.description AS description,
-             node.content AS content,
-             node.path AS path,
-             node.text AS chunk_text,
-             node.chunk_index AS chunk_index,
-             parentFile.path AS parent_file_path,
-             parentFile.name AS parent_file_name,
-             parentFile.language AS parent_file_language,
-             score AS similarity
-      ORDER BY score DESC
-      LIMIT toInteger($finalLimit)
-    `, { ...queryParams, minSimilarity, finalLimit: limit });
-
-    if (result.records.length === 0) {
-      return {
-        status: 'success',
-        query: params.query,
-        results: [],
-        total_candidates: 0,
-        returned: 0,
-        message: 'No similar nodes found. Try lowering min_similarity or check if nodes have embeddings.'
-      };
-    }
-
-    // Format results
-    const results = result.records.map(record => {
-      const content = record.get('content');
-      const description = record.get('description');
-      const title = record.get('title');
-      const name = record.get('name');
-      const path = record.get('path');
-      const chunkText = record.get('chunk_text');
-      const chunkIndex = record.get('chunk_index');
-      const parentFilePath = record.get('parent_file_path');
-      const parentFileName = record.get('parent_file_name');
-      const parentFileLanguage = record.get('parent_file_language');
-      const nodeType = record.get('type');
-      
-      // Create a preview from available text fields
-      let preview = '';
-      if (chunkText) preview = chunkText.substring(0, 200);
-      else if (title) preview = title;
-      else if (name) preview = name;
-      else if (description) preview = description;
-      else if (content && typeof content === 'string') preview = content.substring(0, 200);
-      
-      const resultObj: any = {
-        id: record.get('id'),
-        type: nodeType,
-        title: title || name || null,
-        description: description || null,
-        similarity: record.get('similarity'),
-        content_preview: preview
-      };
-      
-      // Add chunk-specific information
-      if (nodeType === 'file_chunk') {
-        resultObj.chunk_index = chunkIndex;
-        resultObj.parent_file = {
-          path: parentFilePath,
-          name: parentFileName,
-          language: parentFileLanguage
-        };
-      }
-      
-      // Add path for file nodes
-      if (path) {
-        resultObj.path = path;
-      }
-      
-      return resultObj;
+    const result = await searchService.search(params.query, {
+      types: params.types,
+      limit: params.limit || 10,
+      minSimilarity: params.min_similarity || 0.5,
+      offset: 0
     });
-
-    return {
-      status: 'success',
-      query: params.query,
-      results,
-      total_candidates: result.records.length,
-      returned: result.records.length
-    };
-
+    
+    return result;
+    
   } catch (error: any) {
     return {
       status: 'error',
       message: error.message
     };
-  } finally {
-    await session.close();
   }
 }
 
@@ -210,6 +94,9 @@ export async function handleGetEmbeddingStats(
   params: any,
   driver: Driver
 ): Promise<any> {
+  const searchService = new UnifiedSearchService(driver);
+  await searchService.initialize();
+  
   const session = driver.session();
   
   try {
@@ -237,6 +124,7 @@ export async function handleGetEmbeddingStats(
 
     return {
       status: 'success',
+      embeddings_enabled: searchService.isEmbeddingsEnabled(),
       total_nodes_with_embeddings: total,
       breakdown_by_type: byType
     };
