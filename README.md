@@ -1,4 +1,4 @@
-# Mimir - AI-Powered Task Management with Knowledge Graphs
+# Mimir - AI-Powered Memory Bank + Task Management Orchestration with Knowledge Graphs
 
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green?logo=node.js)](https://nodejs.org/)
