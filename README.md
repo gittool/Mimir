@@ -120,17 +120,17 @@ MIMIR_EMBEDDINGS_PROVIDER=ollama
 MIMIR_EMBEDDINGS_MODEL=nomic-embed-text       # For ollama
 ```
 
-**Copilot provider** (recommended):
-- ✅ No local GPU required
-- ✅ Faster processing
-- ✅ Works behind corporate proxies
-- ⚠️ Requires GitHub Copilot subscription
-
-**Ollama provider** (local):
+**Ollama provider** (recommended):
 - ✅ Fully offline
 - ✅ No external dependencies
 - ⚠️ Requires GPU for good performance
 - ⚠️ May have TLS/certificate issues in corporate networks
+
+**Copilot provider** (experimental):
+- ✅ No local GPU required
+- ✅ Faster processing
+- ✅ Works behind corporate proxies
+- ⚠️ Requires GitHub Copilot subscription
 
 #### Advanced Settings (Optional)
 
@@ -143,7 +143,7 @@ HTTPS_PROXY=http://proxy.company.com:8080
 SSL_CERT_FILE=/path/to/corporate-ca.crt
 ```
 
-See `env.example` for complete list of configuration options.
+See `env.example` or `docker-compose.yml` for complete list of configuration options.
 
 ## 🎯 Usage
 
