@@ -5,6 +5,7 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Driver } from 'neo4j-driver';
 import { promises as fs } from 'fs';
+import path from 'path';
 import { FileWatchManager } from '../indexing/FileWatchManager.js';
 import { WatchConfigManager } from '../indexing/WatchConfigManager.js';
 import { LLMConfigLoader } from '../config/LLMConfigLoader.js';
@@ -177,11 +178,32 @@ export async function handleIndexFolder(
   const configManager = new WatchConfigManager(driver);
   const startTime = Date.now();
 
-  // Translate host path to container path if running in Docker
+  // Sanitize and validate path input
   const userProvidedPath = params.path;
-  const containerPath = translateHostToContainer(userProvidedPath);
+  if (!userProvidedPath || typeof userProvidedPath !== 'string') {
+    return {
+      status: 'error',
+      error: 'invalid_path',
+      message: 'Path parameter is required and must be a string',
+      path: userProvidedPath
+    };
+  }
+
+  // Prevent path traversal attacks
+  const resolvedPath = path.resolve(userProvidedPath);
+  if (resolvedPath.includes('..') || userProvidedPath.includes('..')) {
+    return {
+      status: 'error',
+      error: 'invalid_path',
+      message: 'Path traversal detected. Use absolute paths only.',
+      path: userProvidedPath
+    };
+  }
+
+  // Translate host path to container path if running in Docker
+  const containerPath = translateHostToContainer(resolvedPath);
   
-  console.log(`📍 Path translation: ${userProvidedPath} -> ${containerPath}`);
+  console.log(`📍 Path translation: ${resolvedPath} -> ${containerPath}`);
 
   // Validation: Path exists (using container path)
   try {
@@ -190,8 +212,8 @@ export async function handleIndexFolder(
     return {
       status: 'error',
       error: 'path_not_found',
-      message: `Path '${userProvidedPath}' (container: '${containerPath}') does not exist on filesystem.`,
-      path: userProvidedPath
+      message: `Path '${resolvedPath}' (container: '${containerPath}') does not exist on filesystem.`,
+      path: resolvedPath
     };
   }
 
@@ -245,7 +267,7 @@ export async function handleIndexFolder(
 
   return {
     status: 'success',
-    path: userProvidedPath,  // Return original path to user
+    path: resolvedPath,  // Return sanitized path to user
     containerPath: containerPath,  // Also include container path for transparency
     files_indexed: 0,  // Will be updated in background
     elapsed_ms: elapsed,
@@ -263,17 +285,36 @@ export async function handleRemoveFolder(
 ): Promise<any> {
   const configManager = new WatchConfigManager(driver);
   
-  // Translate host path to container path if running in Docker
+  // Sanitize and validate path input
   const userProvidedPath = params.path;
-  const containerPath = translateHostToContainer(userProvidedPath);
+  if (!userProvidedPath || typeof userProvidedPath !== 'string') {
+    return {
+      status: 'error',
+      error: 'invalid_path',
+      message: 'Path parameter is required and must be a string'
+    };
+  }
+
+  // Prevent path traversal attacks
+  const resolvedPath = path.resolve(userProvidedPath);
+  if (resolvedPath.includes('..') || userProvidedPath.includes('..')) {
+    return {
+      status: 'error',
+      error: 'invalid_path',
+      message: 'Path traversal detected. Use absolute paths only.'
+    };
+  }
   
-  console.log(`📍 Path translation for removal: ${userProvidedPath} -> ${containerPath}`);
+  // Translate host path to container path if running in Docker
+  const containerPath = translateHostToContainer(resolvedPath);
+  
+  console.log(`📍 Path translation for removal: ${resolvedPath} -> ${containerPath}`);
   
   const config = await configManager.getByPath(containerPath);
   if (!config) {
     return {
       status: 'error',
-      message: `Path '${userProvidedPath}' (container: '${containerPath}') is not being watched.`
+      message: `Path '${resolvedPath}' (container: '${containerPath}') is not being watched.`
     };
   }
 

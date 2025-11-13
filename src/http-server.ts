@@ -8,6 +8,8 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { server, initializeGraphManager, allTools } from './index.js';
+import { createOrchestrationRouter } from './api/orchestration-api.js';
+import type { IGraphManager } from './types/index.js';
 
 // ============================================================================
 // HTTP Server - Shared Session Mode
@@ -26,8 +28,9 @@ async function startHttpServer() {
   console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
   // Initialize GraphManager
+  let graphManager: IGraphManager;
   try {
-    const graphManager = await initializeGraphManager();
+    graphManager = await initializeGraphManager();
     const stats = await graphManager.getStats();
     console.log(`✅ Connected to Neo4j`);
     console.log(`   Nodes: ${stats.nodeCount}`);
@@ -68,6 +71,9 @@ async function startHttpServer() {
     allowedHeaders: ['Content-Type', 'Accept', 'mcp-session-id'], 
     credentials: true 
   }));
+
+  // Mount orchestration API routes
+  app.use('/api', createOrchestrationRouter(graphManager));
 
   app.post('/mcp', async (req, res) => {
     try {
