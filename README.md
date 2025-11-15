@@ -99,8 +99,8 @@ curl http://localhost:9042/health
 **You're ready!** The Mimir Web UI is now available at `http://localhost:9042`
 
 **What you get:**
-- 🎯 **Portal**: Main hub with navigation and file indexing
-- 🎨 **Orchestration Studio**: Visual workflow builder (coming soon)
+- 🎯 **Portal**: Main hub with navigation and file indexing http://localhost:9042/portal
+- 🎨 **Orchestration Studio**: Visual workflow builder (beta) http://localhost:9042/studio
 - 🔌 **MCP API**: RESTful API at `http://localhost:9042/mcp`
 - 💬 **Chat API**: Conversational interface at `http://localhost:9042/api/chat`
 
