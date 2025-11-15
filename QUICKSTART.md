@@ -60,7 +60,7 @@ This command:
 ## Step 4: Start All Services
 
 ```bash
-# Start Neo4j, Copilot API, MCP Server, and Open-WebUI
+# Start Neo4j, Copilot API, and Mimir Server (with Web UI)
 docker compose up
 ```
 
@@ -69,8 +69,9 @@ docker compose up
 You'll see logs from multiple services starting up. **This is normal:**
 - `neo4j_db` - Database initialization
 - `copilot_api_server` - GitHub authentication
-- `mcp_server` - MCP server startup
-- `mimir-open-webui` - Web interface
+- `mimir-server` - MCP server + Web UI startup
+
+> 💡 **Note**: Open-WebUI is optional and disabled by default. To enable it, uncomment the `open-webui` service in `docker-compose.yml`.
 
 ---
 
@@ -136,17 +137,19 @@ You should see all services as `healthy`:
 NAME                  STATUS
 neo4j_db              Up (healthy)
 copilot_api_server    Up (healthy)
-mcp_server            Up (healthy)
-mimir-open-webui      Up
+mimir-server          Up (healthy)
 ```
 
 **Test the endpoints:**
 ```bash
+# Mimir Web UI (Portal + File Indexing)
+open http://localhost:9042
+
 # Neo4j Browser (should open in browser)
 open http://localhost:7474
 # Username: neo4j, Password: password
 
-# MCP Server Health Check
+# Mimir API Health Check
 curl http://localhost:9042/health
 # Should return: {"status":"ok"}
 
@@ -157,27 +160,35 @@ curl http://localhost:4141/v1/models
 
 ---
 
-## Step 7: Access Open-WebUI
+## Step 7: Access Mimir Web UI
 
-Open-WebUI provides a ChatGPT-like interface with Mimir integration:
+The Mimir Web UI provides a portal with file indexing and access to all features:
 
 ```
-http://localhost:3000
+http://localhost:9042
 ```
 
-**First-time setup:**
-1. Create an admin account (first user becomes admin)
-2. Select model: **gpt-4.1** (default, avoids premium usage)
-3. Start chatting!
+**What's Available:**
+1. **Portal (Main Hub)** - Navigation and file indexing management
+2. **File Indexing** - Add/remove folders to index your codebase
+3. **Orchestration Studio** - Visual workflow builder (coming soon)
+4. **MCP API** - Available at `/mcp` endpoint for AI assistants
+5. **Chat API** - Available at `/api/chat` for conversational interfaces
 
-**Try these commands:**
-```
-Create a TODO for implementing user authentication
+**Try these features:**
+- Add a folder to index your codebase
+- View indexed files in Neo4j Browser
+- Call MCP tools via the API
 
-Show me all pending tasks
+### (Optional) Enable Open-WebUI
 
-Search for files related to authentication
-```
+If you want a ChatGPT-like interface:
+
+1. Edit `docker-compose.yml` and uncomment the `open-webui` service
+2. Restart: `docker compose up -d`
+3. Access at http://localhost:3000
+4. Create an admin account (first user becomes admin)
+5. Select model: **gpt-4.1** (default, avoids premium usage)
 
 ---
 
@@ -204,8 +215,10 @@ Your AI agents now have:
 - ✅ Persistent memory (Neo4j graph database)
 - ✅ GitHub Copilot LLM access
 - ✅ Multi-agent orchestration
-- ✅ Web interface (Open-WebUI)
+- ✅ Web UI with Portal and file indexing (http://localhost:9042)
 - ✅ File indexing and semantic search
+- ✅ MCP API for AI assistant integration
+- ✅ Chat API for conversational interfaces
 
 ---
 
