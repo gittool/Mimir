@@ -110,6 +110,24 @@ class ApiClient {
   async delete<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
+
+  // File Indexing Methods
+  async listIndexedFolders(): Promise<{ folders: Array<{ path: string; recursive: boolean; filePatterns?: string[]; status: string }> }> {
+    return this.get('/mcp/list-folders');
+  }
+
+  async indexFolder(path: string, recursive: boolean = true, generateEmbeddings: boolean = true): Promise<{ success: boolean; message: string }> {
+    return this.post('/mcp/index-folder', { path, recursive, generate_embeddings: generateEmbeddings });
+  }
+
+  async removeFolder(path: string): Promise<{ success: boolean; message: string }> {
+    return this.post('/mcp/remove-folder', { path });
+  }
+
+  // Memory Management
+  async saveConversationAsMemory(messages: Array<{ role: string; content: string; timestamp: Date }>): Promise<{ success: boolean; memoryId: string; message: string }> {
+    return this.post('/mcp/save-conversation', { messages });
+  }
 }
 
 export const apiClient = new ApiClient('/api');

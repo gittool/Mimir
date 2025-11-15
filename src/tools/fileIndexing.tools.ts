@@ -9,80 +9,18 @@ import path from 'path';
 import { FileWatchManager } from '../indexing/FileWatchManager.js';
 import { WatchConfigManager } from '../indexing/WatchConfigManager.js';
 import { LLMConfigLoader } from '../config/LLMConfigLoader.js';
+import {
+  translateHostToContainer,
+  translateContainerToHost,
+  validateAndSanitizePath,
+  pathExists,
+} from '../utils/path-utils.js';
 import type {
   WatchConfigInput,
   WatchFolderResponse,
   IndexFolderResponse,
   ListWatchedFoldersResponse
 } from '../types/index.js';
-
-// ============================================================================
-// Path Translation Utilities
-// ============================================================================
-
-/**
- * Get the host workspace root from environment
- * Default: ~/src (expanded to actual home directory)
- * When running in Docker, HOST_WORKSPACE_ROOT should be pre-expanded by docker-compose
- */
-function getHostWorkspaceRoot(): string {
-  const hostRoot = process.env.HOST_WORKSPACE_ROOT;
-  
-  // If not set, use default
-  if (!hostRoot) {
-    const defaultRoot = '~/src';
-    console.log(`🏠 Host workspace root (default): ${defaultRoot}`);
-    return defaultRoot;
-  }
-  
-  console.log(`🏠 Host workspace root (from env): ${hostRoot}`);
-  return hostRoot;
-}
-
-/**
- * Translate host path to container path
- * Example: /Users/username/src/project -> /workspace/project
- * Example: C:\Users\user\Documents\GitHub\project -> /workspace/project
- */
-function translateHostToContainer(hostPath: string): string {
-  const hostRoot = getHostWorkspaceRoot();
-  
-  // Normalize both paths: convert backslashes to forward slashes, remove trailing slashes
-  const normalizedHostRoot = hostRoot.replace(/\\/g, '/').replace(/\/$/, '');
-  const normalizedHostPath = hostPath.replace(/\\/g, '/').replace(/\/$/, '');
-  
-  // Check if the path starts with the host root
-  if (normalizedHostPath.startsWith(normalizedHostRoot)) {
-    // Replace host root with container workspace
-    const relativePath = normalizedHostPath.substring(normalizedHostRoot.length);
-    return `/workspace${relativePath}`;
-  }
-  
-  // If path doesn't start with host root, assume it's already a container path
-  return normalizedHostPath;
-}
-
-/**
- * Translate container path to host path
- * Example: /workspace/project -> /Users/username/src/project
- */
-function translateContainerToHost(containerPath: string): string {
-
-  const hostRoot = getHostWorkspaceRoot();
-  
-  // Normalize paths
-  const normalizedContainerPath = containerPath.replace(/\/$/, '');
-  
-  // Check if the path starts with /workspace
-  if (normalizedContainerPath.startsWith('/workspace')) {
-    // Replace /workspace with host root
-    const relativePath = normalizedContainerPath.substring('/workspace'.length);
-    return `${hostRoot}${relativePath}`;
-  }
-  
-  // If path doesn't start with /workspace, return as-is
-  return containerPath;
-}
 
 export function createFileIndexingTools(
   driver: Driver,
@@ -178,30 +116,23 @@ export async function handleIndexFolder(
   const configManager = new WatchConfigManager(driver);
   const startTime = Date.now();
 
-  // Sanitize and validate path input
-  const userProvidedPath = params.path;
-  if (!userProvidedPath || typeof userProvidedPath !== 'string') {
+  // Sanitize and validate path input using new path utilities
+  let resolvedPath: string;
+  let containerPath: string;
+  
+  try {
+    resolvedPath = validateAndSanitizePath(params.path);
+    
+    // Translate host path to container path
+    containerPath = translateHostToContainer(resolvedPath);
+  } catch (error) {
     return {
       status: 'error',
       error: 'invalid_path',
-      message: 'Path parameter is required and must be a string',
-      path: userProvidedPath
+      message: error instanceof Error ? error.message : 'Invalid path provided',
+      path: params.path
     };
   }
-
-  // Prevent path traversal attacks
-  const resolvedPath = path.resolve(userProvidedPath);
-  if (resolvedPath.includes('..') || userProvidedPath.includes('..')) {
-    return {
-      status: 'error',
-      error: 'invalid_path',
-      message: 'Path traversal detected. Use absolute paths only.',
-      path: userProvidedPath
-    };
-  }
-
-  // Translate host path to container path if running in Docker
-  const containerPath = translateHostToContainer(resolvedPath);
   
   console.log(`📍 Path translation: ${resolvedPath} -> ${containerPath}`);
 
@@ -285,28 +216,22 @@ export async function handleRemoveFolder(
 ): Promise<any> {
   const configManager = new WatchConfigManager(driver);
   
-  // Sanitize and validate path input
-  const userProvidedPath = params.path;
-  if (!userProvidedPath || typeof userProvidedPath !== 'string') {
-    return {
-      status: 'error',
-      error: 'invalid_path',
-      message: 'Path parameter is required and must be a string'
-    };
-  }
-
-  // Prevent path traversal attacks
-  const resolvedPath = path.resolve(userProvidedPath);
-  if (resolvedPath.includes('..') || userProvidedPath.includes('..')) {
-    return {
-      status: 'error',
-      error: 'invalid_path',
-      message: 'Path traversal detected. Use absolute paths only.'
-    };
-  }
+  // Sanitize and validate path input using new path utilities
+  let resolvedPath: string;
+  let containerPath: string;
   
-  // Translate host path to container path if running in Docker
-  const containerPath = translateHostToContainer(resolvedPath);
+  try {
+    resolvedPath = validateAndSanitizePath(params.path);
+    
+    // Translate host path to container path
+    containerPath = translateHostToContainer(resolvedPath);
+  } catch (error) {
+    return {
+      status: 'error',
+      error: 'invalid_path',
+      message: error instanceof Error ? error.message : 'Invalid path provided'
+    };
+  }
   
   console.log(`📍 Path translation for removal: ${resolvedPath} -> ${containerPath}`);
   
@@ -344,7 +269,7 @@ export async function handleRemoveFolder(
     
     return {
       status: 'success',
-      path: userProvidedPath,  // Return original path to user
+      path: params.path,  // Return original path to user
       containerPath: containerPath,  // Also include container path for transparency
       files_removed: filesDeleted,
       chunks_removed: chunksDeleted,

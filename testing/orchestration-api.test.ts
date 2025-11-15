@@ -1,29 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { GraphManager } from '../src/managers/GraphManager.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createMockGraphManager } from './helpers/mockGraphManager.js';
 import type { IGraphManager } from '../src/types/index.js';
 
+/**
+ * Orchestration API - Agent Management Tests
+ * 
+ * Uses MockGraphManager to avoid real database calls and data modification.
+ * All operations are in-memory and isolated per test.
+ */
 describe('Orchestration API - Agent Management', () => {
   let graphManager: IGraphManager;
 
-  beforeAll(async () => {
-    // Initialize GraphManager with test database
-    graphManager = new GraphManager(
-      process.env.NEO4J_URI || 'bolt://localhost:7687',
-      process.env.NEO4J_USER || 'neo4j',
-      process.env.NEO4J_PASSWORD || 'password'
-    );
-  });
-
-  afterAll(async () => {
-    await graphManager.close();
-  });
-
   beforeEach(async () => {
-    // Clear all preamble nodes before each test
-    const allNodes = await graphManager.queryNodes('preamble');
-    for (const node of allNodes) {
-      await graphManager.deleteNode(node.id);
-    }
+    // Create fresh mock for each test - ensures complete isolation
+    graphManager = createMockGraphManager();
+    await graphManager.initialize();
   });
 
   describe('Agent Creation', () => {

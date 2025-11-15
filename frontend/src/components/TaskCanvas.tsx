@@ -165,6 +165,24 @@ export function TaskCanvas() {
       console.log('Updated task status to failed');
     });
     
+    eventSource.addEventListener('agent-chatter', (event) => {
+      const data = JSON.parse(event.data);
+      console.group(`💬 Agent Chatter: ${data.taskTitle} (${data.taskId})`);
+      if (data.preamble) {
+        console.log(`📋 Preamble (truncated):\n${data.preamble}`);
+      }
+      if (data.output) {
+        console.log(`📤 Output (truncated):\n${data.output}`);
+      }
+      if (data.tokens) {
+        console.log(`🎫 Tokens: ${data.tokens.input} in, ${data.tokens.output} out`);
+      }
+      if (data.toolCalls) {
+        console.log(`🔧 Tool Calls: ${data.toolCalls}`);
+      }
+      console.groupEnd();
+    });
+    
     eventSource.addEventListener('execution-complete', (event) => {
       const data = JSON.parse(event.data);
       console.log('✅ Execution complete:', data);
@@ -266,7 +284,7 @@ export function TaskCanvas() {
     }
   };
   
-  // Download deliverables handler
+  // Download deliverables handler (as zip archive)
   const handleDownloadDeliverables = async () => {
     if (deliverables.length === 0) return;
     
@@ -274,31 +292,30 @@ export function TaskCanvas() {
     if (!execId) return;
     
     try {
-      // Fetch the list of deliverables (with download URLs)
-      const response = await fetch(`/api/execution-deliverables/${execId}`);
+      // Fetch the zip archive
+      const response = await fetch(`/api/deliverables/${execId}/download`);
       if (!response.ok) {
-        throw new Error('Failed to fetch deliverables');
+        throw new Error('Failed to download deliverables archive');
       }
       
-      const data = await response.json();
+      // Get the blob from the response
+      const blob = await response.blob();
       
-      // Download each file
-      for (const deliverable of data.deliverables) {
-        // Create a temporary link and click it to trigger download
-        const link = document.createElement('a');
-        link.href = deliverable.downloadUrl;
-        link.download = deliverable.filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        // Small delay between downloads to avoid browser blocking
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
+      // Create a download link
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `execution-${execId}-deliverables.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       
-      console.log(`✅ Downloaded ${data.deliverables.length} deliverables`);
+      // Clean up the object URL
+      URL.revokeObjectURL(url);
+      
+      console.log(`✅ Downloaded deliverables archive with ${deliverables.length} files`);
     } catch (error: any) {
-      console.error('❌ Failed to download deliverables:', error);
+      console.error('❌ Failed to download deliverables archive:', error);
       alert(`Failed to download deliverables: ${error.message}`);
     }
   };
@@ -492,9 +509,10 @@ export function TaskCanvas() {
               type="button"
               onClick={handleDownloadDeliverables}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2 transition-all font-semibold shadow-lg hover:shadow-green-600/30"
+              title={`Download all ${deliverables.length} deliverable${deliverables.length === 1 ? '' : 's'} as a zip archive`}
             >
               <FileDown className="w-4 h-4" />
-              <span>Download Results ({deliverables.length} {deliverables.length === 1 ? 'file' : 'files'})</span>
+              <span>Download ZIP ({deliverables.length} {deliverables.length === 1 ? 'file' : 'files'})</span>
             </button>
           )}
           <button

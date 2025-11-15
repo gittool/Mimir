@@ -6,523 +6,23 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import neo4j from 'neo4j-driver';
-import { executeTask, generatePreamble, type TaskDefinition, type ExecutionResult } from '../orchestrator/task-executor.js';
+
+// Import modular orchestration components
+import { 
+  sendSSEEvent, 
+  registerSSEClient, 
+  unregisterSSEClient,
+} from './orchestration/sse.js';
+import { generatePreambleWithAgentinator } from './orchestration/agentinator.js';
+import { 
+  executeWorkflowFromJSON, 
+  executionStates,
+  type ExecutionState,
+  type Deliverable 
+} from './orchestration/workflow-executor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// In-memory execution state manager
-interface Deliverable {
-  filename: string;
-  content: string;
-  mimeType: string;
-  size: number;
-}
-
-interface ExecutionState {
-  executionId: string;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
-  currentTaskId: string | null;
-  taskStatuses: Record<string, 'pending' | 'executing' | 'completed' | 'failed'>;
-  results: ExecutionResult[];
-  deliverables: Deliverable[]; // In-memory file contents
-  startTime: number;
-  endTime?: number;
-  error?: string;
-  cancelled?: boolean; // Flag to request cancellation
-}
-
-const executionStates = new Map<string, ExecutionState>();
-const sseClients = new Map<string, any[]>(); // Use any for SSE streaming
-
-// Helper to send SSE event
-function sendSSEEvent(executionId: string, event: string, data: any) {
-  const clients = sseClients.get(executionId) || [];
-  const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  
-  clients.forEach((client) => {
-    try {
-      client.write(message);
-    } catch (error) {
-      console.error('Failed to send SSE event:', error);
-    }
-  });
-}
-
-/**
- * Generate agent preamble using Agentinator
- */
-async function generatePreambleWithAgentinator(
-  roleDescription: string,
-  agentType: 'worker' | 'qc'
-): Promise<{ name: string; role: string; content: string }> {
-  try {
-    // Load Agentinator preamble
-    const agentinatorPath = path.join(__dirname, '../../docs/agents/v2/02-agentinator-preamble.md');
-    const agentinatorPreamble = await fs.readFile(agentinatorPath, 'utf-8');
-
-    // Load appropriate template
-    const templatePath = path.join(
-      __dirname,
-      '../../docs/agents/v2/templates',
-      agentType === 'worker' ? 'worker-template.md' : 'qc-template.md'
-    );
-    const template = await fs.readFile(templatePath, 'utf-8');
-
-    // Build Agentinator prompt
-    const agentinatorPrompt = `${agentinatorPreamble}
-
----
-
-## INPUT
-
-<agent_type>
-${agentType}
-</agent_type>
-
-<role_description>
-${roleDescription}
-</role_description>
-
-<template_path>
-${agentType === 'worker' ? 'templates/worker-template.md' : 'templates/qc-template.md'}
-</template_path>
-
----
-
-<template_content>
-${template}
-</template_content>
-
----
-
-Generate the complete ${agentType} preamble now. Output the preamble directly as markdown (no code fences, no explanations).`;
-
-    // Call LLM with Agentinator preamble
-    // Use Docker service name for inter-container communication
-    const apiUrl = process.env.COPILOT_API_URL || 'http://copilot-api:4141/v1/chat/completions';
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer sk-copilot-dummy',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1',
-        messages: [
-          {
-            role: 'user',
-            content: agentinatorPrompt
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 16000, // Large enough for full preambles
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Agentinator API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const preambleContent = data.choices[0]?.message?.content || '';
-
-    if (!preambleContent) {
-      throw new Error('Agentinator returned empty preamble');
-    }
-
-    // Extract name from role description (first 3-5 words)
-    const words = roleDescription.trim().split(/\s+/);
-    const name = words.slice(0, Math.min(5, words.length)).join(' ');
-
-    console.log(`✅ Agentinator generated ${preambleContent.length} character preamble for: ${name}`);
-
-    return {
-      name,
-      role: roleDescription,
-      content: preambleContent,
-    };
-  } catch (error) {
-    console.error('Agentinator generation failed:', error);
-    throw new Error(`Failed to generate preamble with Agentinator: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-}
-
-/**
- * Execute workflow from Task Canvas JSON format
- * Converts UI tasks to TaskDefinition format and executes them
- */
-async function executeWorkflowFromJSON(
-  uiTasks: any[],
-  agentTemplates: any[],
-  outputDir: string,
-  executionId: string
-): Promise<ExecutionResult[]> {
-  console.log('\n' + '='.repeat(80));
-  console.log('🚀 WORKFLOW EXECUTOR (JSON MODE)');
-  console.log('='.repeat(80));
-  console.log(`📄 Execution ID: ${executionId}`);
-  console.log(`📁 Output Directory: ${outputDir}\n`);
-
-  // Initialize execution state
-  const initialTaskStatuses: Record<string, 'pending' | 'executing' | 'completed' | 'failed'> = {};
-  uiTasks.forEach(task => {
-    initialTaskStatuses[task.id] = 'pending';
-  });
-
-  executionStates.set(executionId, {
-    executionId,
-    status: 'running',
-    currentTaskId: null,
-    taskStatuses: initialTaskStatuses,
-    results: [],
-    deliverables: [],
-    startTime: Date.now(),
-  });
-
-  // Emit execution start event
-  sendSSEEvent(executionId, 'execution-start', {
-    executionId,
-    totalTasks: uiTasks.length,
-    startTime: Date.now(),
-  });
-
-  // Convert UI tasks to TaskDefinition format
-  const taskDefinitions: TaskDefinition[] = uiTasks.map(task => ({
-    id: task.id,
-    title: task.title || task.id,
-    agentRoleDescription: task.agentRoleDescription,
-    recommendedModel: task.recommendedModel || 'gpt-4.1',
-    prompt: task.prompt,
-    dependencies: task.dependencies || [],
-    estimatedDuration: task.estimatedDuration || '30 min',
-    parallelGroup: task.parallelGroup,
-    qcRole: task.qcAgentRoleDescription,
-    verificationCriteria: task.verificationCriteria ? task.verificationCriteria.join('\n') : undefined,
-    maxRetries: task.maxRetries || 2,
-    estimatedToolCalls: task.estimatedToolCalls,
-  }));
-
-  console.log(`📋 Converted ${taskDefinitions.length} UI tasks to TaskDefinition format\n`);
-
-  // Generate preambles for each unique role
-  console.log('-'.repeat(80));
-  console.log('STEP 1: Generate Agent Preambles (Worker + QC)');
-  console.log('-'.repeat(80) + '\n');
-
-  const rolePreambles = new Map<string, string>();
-  const qcRolePreambles = new Map<string, string>();
-
-  // Group tasks by worker role
-  const roleMap = new Map<string, TaskDefinition[]>();
-  for (const task of taskDefinitions) {
-    const existing = roleMap.get(task.agentRoleDescription) || [];
-    existing.push(task);
-    roleMap.set(task.agentRoleDescription, existing);
-  }
-
-  // Generate worker preambles (from database - returns content)
-  console.log('📝 Generating Worker Preambles...\n');
-  for (const [role, roleTasks] of roleMap.entries()) {
-    console.log(`   Worker (${roleTasks.length} tasks): ${role.substring(0, 60)}...`);
-    const preambleContent = await generatePreamble(role, outputDir, roleTasks[0], false);
-    rolePreambles.set(role, preambleContent);
-  }
-
-  // Group tasks by QC role
-  const qcRoleMap = new Map<string, TaskDefinition[]>();
-  for (const task of taskDefinitions) {
-    if (task.qcRole) {
-      const qcExisting = qcRoleMap.get(task.qcRole) || [];
-      qcExisting.push(task);
-      qcRoleMap.set(task.qcRole, qcExisting);
-    }
-  }
-
-  // Generate QC preambles (from database - returns content)
-  console.log('\n📝 Generating QC Preambles...\n');
-  for (const [qcRole, qcTasks] of qcRoleMap.entries()) {
-    console.log(`   QC (${qcTasks.length} tasks): ${qcRole.substring(0, 60)}...`);
-    const qcPreambleContent = await generatePreamble(qcRole, outputDir, qcTasks[0], true);
-    qcRolePreambles.set(qcRole, qcPreambleContent);
-  }
-
-  console.log(`\n✅ Generated ${rolePreambles.size} worker preambles`);
-  console.log(`✅ Generated ${qcRolePreambles.size} QC preambles\n`);
-
-  // Execute tasks sequentially (parallel execution can be added later)
-  console.log('-'.repeat(80));
-  console.log('STEP 2: Execute Tasks (Serial Execution)');
-  console.log('-'.repeat(80) + '\n');
-
-  const results: ExecutionResult[] = [];
-  
-  for (let i = 0; i < taskDefinitions.length; i++) {
-    const task = taskDefinitions[i];
-    const preambleContent = rolePreambles.get(task.agentRoleDescription);
-    const qcPreambleContent = task.qcRole ? qcRolePreambles.get(task.qcRole) : undefined;
-    
-    // Check for cancellation before starting next task
-    const state = executionStates.get(executionId);
-    if (state?.cancelled) {
-      console.log(`\n⛔ Execution ${executionId} was cancelled - stopping`);
-      break;
-    }
-    
-    if (!preambleContent) {
-      console.error(`❌ No preamble content found for role: ${task.agentRoleDescription}`);
-      continue;
-    }
-
-    console.log(`\n📦 Task ${i + 1}/${taskDefinitions.length}: Executing ${task.id}`);
-    
-    // Update state and emit task-start event
-    if (state) {
-      state.currentTaskId = task.id;
-      state.taskStatuses[task.id] = 'executing';
-    }
-    sendSSEEvent(executionId, 'task-start', {
-      taskId: task.id,
-      taskTitle: task.title,
-      progress: i + 1,
-      total: taskDefinitions.length,
-    });
-    
-    try {
-      const result = await executeTask(task, preambleContent, qcPreambleContent);
-      results.push(result);
-      
-      // Update state based on result
-      if (state) {
-        state.taskStatuses[task.id] = result.status === 'success' ? 'completed' : 'failed';
-        state.results.push(result);
-      }
-      
-      // Emit task completion event
-      sendSSEEvent(executionId, result.status === 'success' ? 'task-complete' : 'task-fail', {
-        taskId: task.id,
-        taskTitle: task.title,
-        status: result.status,
-        duration: result.duration,
-        progress: i + 1,
-        total: taskDefinitions.length,
-      });
-      
-      if (result.status === 'failure') {
-        console.error(`\n⛔ Task ${task.id} failed, stopping execution`);
-        break;
-      }
-    } catch (error: any) {
-      console.error(`\n❌ Task ${task.id} execution error: ${error.message}`);
-      
-      // Update state to failed
-      if (state) {
-        state.taskStatuses[task.id] = 'failed';
-      }
-      
-      // Emit task failure event
-      sendSSEEvent(executionId, 'task-fail', {
-        taskId: task.id,
-        taskTitle: task.title,
-        error: error.message,
-        progress: i + 1,
-        total: taskDefinitions.length,
-      });
-      
-      break;
-    }
-  }
-
-  // Summary
-  console.log('\n' + '='.repeat(80));
-  console.log('📊 EXECUTION SUMMARY');
-  console.log('='.repeat(80));
-  
-  const successful = results.filter(r => r.status === 'success').length;
-  const failed = results.filter(r => r.status === 'failure').length;
-  const totalDuration = results.reduce((acc, r) => acc + r.duration, 0);
-  
-  console.log(`\n✅ Successful: ${successful}/${taskDefinitions.length}`);
-  console.log(`❌ Failed: ${failed}/${taskDefinitions.length}`);
-  console.log(`⏱️  Total Duration: ${(totalDuration / 1000).toFixed(2)}s\n`);
-  
-  results.forEach((result, i) => {
-    const icon = result.status === 'success' ? '✅' : '❌';
-    console.log(`${icon} ${i + 1}. ${result.taskId} (${(result.duration / 1000).toFixed(2)}s)`);
-  });
-  
-  console.log('\n' + '='.repeat(80) + '\n');
-  
-  // Update final execution state
-  const finalState = executionStates.get(executionId);
-  const wasCancelled = finalState?.cancelled || false;
-  
-  // Determine completion status
-  const completionStatus = wasCancelled ? 'cancelled' : (failed > 0 ? 'failed' : 'completed');
-  
-  if (finalState) {
-    // Keep 'cancelled' status if it was set, otherwise determine from results
-    if (!wasCancelled) {
-      finalState.status = failed > 0 ? 'failed' : 'completed';
-    }
-    finalState.endTime = Date.now();
-    finalState.currentTaskId = null;
-    
-    // Generate error report if there were failures or errors
-    if (failed > 0 || finalState.error) {
-      try {
-        const errorReport = {
-          executionId,
-          timestamp: new Date().toISOString(),
-          summary: {
-            total: taskDefinitions.length,
-            successful,
-            failed,
-            cancelled: wasCancelled,
-          },
-          failedTasks: results
-            .filter(r => r.status === 'failure')
-            .map(r => ({
-              taskId: r.taskId,
-              taskTitle: taskDefinitions.find(t => t.id === r.taskId)?.title || r.taskId,
-              duration: r.duration,
-              error: r.error || 'Unknown error',
-              attemptNumber: r.attemptNumber || 1,
-            })),
-          executionError: finalState.error,
-        };
-        
-        const errorReportPath = path.join(outputDir, 'ERROR_REPORT.json');
-        await fs.writeFile(errorReportPath, JSON.stringify(errorReport, null, 2), 'utf-8');
-        console.log(`📋 Generated error report: ${errorReportPath}`);
-        
-        // Also generate a human-readable markdown version
-        const mdReport = `# Execution Error Report
-
-**Execution ID:** ${executionId}  
-**Timestamp:** ${errorReport.timestamp}  
-**Status:** ${wasCancelled ? 'Cancelled' : 'Failed'}
-
-## Summary
-
-- **Total Tasks:** ${errorReport.summary.total}
-- **Successful:** ${errorReport.summary.successful}
-- **Failed:** ${errorReport.summary.failed}
-- **Cancelled:** ${errorReport.summary.cancelled ? 'Yes' : 'No'}
-
-## Failed Tasks
-
-${errorReport.failedTasks.map((task, i) => `
-### ${i + 1}. ${task.taskTitle} (${task.taskId})
-
-- **Duration:** ${(task.duration / 1000).toFixed(2)}s
-- **Attempt:** ${task.attemptNumber}
-- **Error:** ${task.error}
-`).join('\n')}
-
-${finalState.error ? `## Execution Error\n\n${finalState.error}\n` : ''}
-`;
-        
-        const mdReportPath = path.join(outputDir, 'ERROR_REPORT.md');
-        await fs.writeFile(mdReportPath, mdReport, 'utf-8');
-        console.log(`📋 Generated markdown error report: ${mdReportPath}`);
-      } catch (reportError) {
-        console.error('Failed to generate error report:', reportError);
-      }
-    }
-    
-    // Generate execution summary (always, even for successful runs)
-    try {
-      const summaryReport = {
-        executionId,
-        timestamp: new Date().toISOString(),
-        status: completionStatus,
-        duration: finalState.endTime - finalState.startTime,
-        summary: {
-          total: taskDefinitions.length,
-          successful,
-          failed,
-          cancelled: wasCancelled,
-        },
-        tasks: results.map(r => ({
-          taskId: r.taskId,
-          taskTitle: taskDefinitions.find(t => t.id === r.taskId)?.title || r.taskId,
-          status: r.status,
-          duration: r.duration,
-          attemptNumber: r.attemptNumber || 1,
-        })),
-      };
-      
-      const summaryPath = path.join(outputDir, 'EXECUTION_SUMMARY.json');
-      await fs.writeFile(summaryPath, JSON.stringify(summaryReport, null, 2), 'utf-8');
-      console.log(`📊 Generated execution summary: ${summaryPath}`);
-    } catch (summaryError) {
-      console.error('Failed to generate execution summary:', summaryError);
-    }
-    
-    // Collect deliverables (preambles, reports, etc.) - read files into memory
-    try {
-      const files = await fs.readdir(outputDir);
-      const deliverables: Deliverable[] = [];
-      
-      for (const file of files) {
-        const filePath = path.join(outputDir, file);
-        const stats = await fs.stat(filePath);
-        
-        if (stats.isFile()) {
-          const content = await fs.readFile(filePath, 'utf-8');
-          deliverables.push({
-            filename: file,
-            content,
-            mimeType: file.endsWith('.md') ? 'text/markdown' : 
-                      file.endsWith('.json') ? 'application/json' : 'text/plain',
-            size: content.length,
-          });
-        }
-      }
-      
-      finalState.deliverables = deliverables;
-      
-      // Clean up the output directory after reading files into memory
-      await fs.rm(outputDir, { recursive: true, force: true });
-      console.log(`🗑️  Cleaned up temporary directory: ${outputDir}`);
-    } catch (error) {
-      console.error('Failed to collect deliverables:', error);
-      finalState.deliverables = [];
-    }
-  }
-  
-  // Emit appropriate completion event
-  const completionEvent = wasCancelled ? 'execution-cancelled' : 'execution-complete';
-  
-  sendSSEEvent(executionId, completionEvent, {
-    executionId,
-    status: completionStatus,
-    successful,
-    failed,
-    cancelled: wasCancelled,
-    completed: results.length,
-    total: taskDefinitions.length,
-    totalDuration,
-    deliverables: finalState?.deliverables.map(d => ({
-      filename: d.filename,
-      size: d.size,
-      mimeType: d.mimeType,
-    })) || [],
-    results: results.map(r => ({
-      taskId: r.taskId,
-      status: r.status,
-      duration: r.duration,
-    })),
-  });
-  
-  // Clean up SSE clients after a delay (allow final event to be received)
-  setTimeout(() => {
-    sseClients.delete(executionId);
-  }, 5000);
-  
-  return results;
-}
 
 export function createOrchestrationRouter(graphManager: IGraphManager): Router {
   const router = Router();
@@ -775,26 +275,57 @@ export function createOrchestrationRouter(graphManager: IGraphManager): Router {
   router.delete('/agents/:id', async (req: any, res: any) => {
     try {
       const { id } = req.params;
+      console.log(`🗑️  DELETE request for agent: ${id}`);
       
       // Don't allow deleting default agents
       if (id.startsWith('default-')) {
+        console.warn(`⚠️  Attempted to delete default agent: ${id}`);
         return res.status(403).json({ error: 'Cannot delete default agents' });
       }
       
-      const agent = await graphManager.getNode(id);
+      // Check if agent exists first
+      let agent;
+      try {
+        agent = await graphManager.getNode(id);
+      } catch (getError: any) {
+        console.error(`❌ Error getting agent ${id}:`, getError);
+        return res.status(500).json({
+          error: 'Database error while checking agent',
+          details: getError.message || 'Failed to query database'
+        });
+      }
       
-      if (!agent || agent.type !== 'preamble') {
+      if (!agent) {
+        console.warn(`⚠️  Agent not found: ${id}`);
         return res.status(404).json({ error: 'Agent not found' });
       }
       
-      await graphManager.deleteNode(id);
+      if (agent.type !== 'preamble') {
+        console.warn(`⚠️  Node ${id} is not a preamble (type: ${agent.type})`);
+        return res.status(404).json({ error: 'Agent not found' });
+      }
       
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error deleting agent:', error);
+      // Delete the agent
+      try {
+        const deleted = await graphManager.deleteNode(id);
+        if (!deleted) {
+          console.warn(`⚠️  Agent ${id} was not deleted (returned false)`);
+          return res.status(404).json({ error: 'Agent not found or already deleted' });
+        }
+        console.log(`✅ Successfully deleted agent: ${id}`);
+        res.json({ success: true });
+      } catch (deleteError: any) {
+        console.error(`❌ Error deleting agent ${id}:`, deleteError);
+        return res.status(500).json({
+          error: 'Database error while deleting agent',
+          details: deleteError.message || 'Failed to delete from database'
+        });
+      }
+    } catch (error: any) {
+      console.error('❌ Unexpected error deleting agent:', error);
       res.status(500).json({
         error: 'Failed to delete agent',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message || 'Unknown error'
       });
     }
   });
@@ -1037,13 +568,8 @@ Location: ${process.cwd()}
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
     
-    // Add this client to the list
-    if (!sseClients.has(executionId)) {
-      sseClients.set(executionId, []);
-    }
-    sseClients.get(executionId)!.push(res);
-    
-    console.log(`📡 SSE client connected for execution ${executionId}`);
+    // Register this client for SSE updates
+    registerSSEClient(executionId, res);
     
     // Send initial state if execution exists
     const state = executionStates.get(executionId);
@@ -1059,15 +585,7 @@ Location: ${process.cwd()}
     
     // Handle client disconnect
     req.on('close', () => {
-      const clients = sseClients.get(executionId) || [];
-      const index = clients.indexOf(res);
-      if (index !== -1) {
-        clients.splice(index, 1);
-      }
-      if (clients.length === 0) {
-        sseClients.delete(executionId);
-      }
-      console.log(`📡 SSE client disconnected from execution ${executionId}`);
+      unregisterSSEClient(executionId, res);
     });
   });
 
@@ -1111,6 +629,37 @@ Location: ${process.cwd()}
       success: true,
       executionId,
       message: 'Execution cancellation requested',
+    });
+  });
+
+  /**
+   * GET /api/execution-state/:executionId
+   * Get current execution state
+   * 
+   * Returns the current state of a running or completed execution,
+   * including status and task statuses.
+   * 
+   * @since 1.0.0
+   */
+  router.get('/execution-state/:executionId', (req: any, res: any) => {
+    const { executionId } = req.params;
+    
+    const state = executionStates.get(executionId);
+    if (!state) {
+      return res.status(404).json({ 
+        error: 'Execution not found',
+        executionId 
+      });
+    }
+    
+    res.json({
+      executionId,
+      status: state.status,
+      taskStatuses: state.taskStatuses,
+      currentTaskId: state.currentTaskId,
+      startTime: state.startTime,
+      endTime: state.endTime,
+      cancelled: state.cancelled || false,
     });
   });
 
@@ -1176,10 +725,256 @@ Location: ${process.cwd()}
     });
   });
 
+  /**
+   * GET /api/executions/:executionId
+   * Get all task executions and telemetry for an execution run
+   */
+  router.get('/executions/:executionId', async (req: any, res: any) => {
+    try {
+      const { executionId } = req.params;
+      
+      const driver = graphManager.getDriver();
+      const session = driver.session();
+      
+      try {
+        // Get execution summary
+        const summaryResult = await session.run(`
+          MATCH (exec:Node {id: $executionId, type: 'orchestration_execution'})
+          RETURN exec
+        `, { executionId });
+        
+        // Get all task executions
+        const tasksResult = await session.run(`
+          MATCH (te:Node)
+          WHERE te.type = 'task_execution' AND te.executionId = $executionId
+          RETURN te
+          ORDER BY te.timestamp
+        `, { executionId });
+        
+        const summary = summaryResult.records.length > 0
+          ? summaryResult.records[0].get('exec').properties
+          : null;
+        
+        const tasks = tasksResult.records.map((record: any) => record.get('te').properties);
+        
+        // Build taskExecutions array with node IDs
+        const taskExecutions = tasks.map((task: any) => ({
+          nodeId: task.id, // The unique task execution node ID
+          taskId: task.taskId,
+          taskTitle: task.taskTitle,
+          status: task.status,
+          duration: task.duration?.toNumber() || 0,
+          tokens: {
+            input: task.tokensInput?.toNumber() || 0,
+            output: task.tokensOutput?.toNumber() || 0,
+            total: task.tokensTotal?.toNumber() || 0,
+          },
+          toolCalls: task.toolCalls?.toNumber() || 0,
+          qcPassed: task.qcPassed || false,
+          qcScore: task.qcScore?.toNumber() || 0,
+          timestamp: task.timestamp,
+        }));
+        
+        res.json({
+          executionId,
+          summary,
+          tasks,
+          taskExecutions, // New field with node IDs
+          totalTasks: tasks.length,
+          totalTokens: summary ? {
+            input: summary.tokensInput?.toNumber() || 0,
+            output: summary.tokensOutput?.toNumber() || 0,
+            total: summary.tokensTotal?.toNumber() || 0,
+          } : null,
+        });
+      } finally {
+        await session.close();
+      }
+    } catch (error) {
+      console.error('Error fetching execution:', error);
+      res.status(500).json({
+        error: 'Failed to fetch execution',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  /**
+   * GET /api/deliverables/:executionId/download
+   * Download all deliverables as a zip archive
+   * 
+   * Returns a zip file containing all deliverable files from an execution.
+   * 
+   * @since 1.0.0
+   */
+  router.get('/deliverables/:executionId/download', async (req: any, res: any) => {
+    try {
+      const { executionId } = req.params;
+      const state = executionStates.get(executionId);
+
+      if (!state) {
+        return res.status(404).json({
+          error: 'Execution not found',
+          executionId,
+        });
+      }
+
+      if (state.deliverables.length === 0) {
+        return res.status(404).json({
+          error: 'No deliverables found for this execution',
+          executionId,
+        });
+      }
+
+      // Dynamically import archiver
+      const archiver = (await import('archiver')).default;
+      const archive = archiver('zip', {
+        zlib: { level: 9 }, // Maximum compression
+      });
+
+      // Set response headers for zip download
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="execution-${executionId}-deliverables.zip"`);
+
+      // Pipe archive to response
+      archive.pipe(res);
+
+      // Add all deliverable files to the archive
+      for (const deliverable of state.deliverables) {
+        if (deliverable.content) {
+          archive.append(deliverable.content, { name: deliverable.filename });
+        }
+      }
+
+      // Finalize the archive
+      await archive.finalize();
+
+      console.log(`✅ Delivered zip archive with ${state.deliverables.length} files for execution ${executionId}`);
+    } catch (error) {
+      console.error('Error creating deliverables zip:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: 'Failed to create deliverables archive',
+          details: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+  });
+
+  /**
+   * GET /api/deliverables/:executionId
+   * Get execution deliverables with node ID metadata
+   * 
+   * Returns all deliverable files from an execution along with metadata
+   * including the execution node ID and all task execution node IDs.
+   * 
+   * @since 1.0.0
+   */
+  router.get('/deliverables/:executionId', async (req: any, res: any) => {
+    try {
+      const { executionId } = req.params;
+      const state = executionStates.get(executionId);
+      
+      if (!state) {
+        return res.status(404).json({
+          error: 'Execution not found',
+          message: `No execution found with ID: ${executionId}`,
+        });
+      }
+      
+      // Extract task execution node IDs from results
+      const taskExecutionIds = state.results
+        .filter(r => r.graphNodeId)
+        .map(r => r.graphNodeId as string);
+      
+      res.json({
+        executionId,
+        status: state.status,
+        taskExecutionIds,
+        deliverables: state.deliverables.map(d => ({
+          filename: d.filename,
+          size: d.size,
+          mimeType: d.mimeType,
+        })),
+        totalDeliverables: state.deliverables.length,
+        metadata: {
+          startTime: state.startTime,
+          endTime: state.endTime,
+          duration: state.endTime ? state.endTime - state.startTime : null,
+          totalTasks: Object.keys(state.taskStatuses).length,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching deliverables:', error);
+      res.status(500).json({
+        error: 'Failed to fetch deliverables',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  /**
+   * GET /api/executions
+   * List all executions with summary data
+   */
+  router.get('/executions', async (req: any, res: any) => {
+    try {
+      const { limit = '50', offset = '0' } = req.query;
+      
+      const driver = graphManager.getDriver();
+      const session = driver.session();
+      
+      try {
+        const result = await session.run(`
+          MATCH (exec:Node {type: 'orchestration_execution'})
+          RETURN exec
+          ORDER BY exec.startTime DESC
+          SKIP $offset
+          LIMIT $limit
+        `, {
+          offset: neo4j.int(parseInt(offset as string)),
+          limit: neo4j.int(parseInt(limit as string)),
+        });
+        
+        const executions = result.records.map((record: any) => {
+          const props = record.get('exec').properties;
+          return {
+            executionId: props.id,
+            planId: props.planId,
+            status: props.status,
+            startTime: props.startTime,
+            endTime: props.endTime,
+            duration: props.duration?.toNumber() || 0,
+            tasksTotal: props.tasksTotal?.toNumber() || 0,
+            tasksSuccessful: props.tasksSuccessful?.toNumber() || 0,
+            tasksFailed: props.tasksFailed?.toNumber() || 0,
+            tokensTotal: props.tokensTotal?.toNumber() || 0,
+            toolCalls: props.toolCalls?.toNumber() || 0,
+          };
+        });
+        
+        res.json({
+          executions,
+          returned: executions.length,
+          offset: parseInt(offset as string),
+          limit: parseInt(limit as string),
+        });
+      } finally {
+        await session.close();
+      }
+    } catch (error) {
+      console.error('Error listing executions:', error);
+      res.status(500).json({
+        error: 'Failed to list executions',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
   // POST /api/execute-workflow - Execute workflow from Task Canvas JSON
   router.post('/execute-workflow', async (req: any, res: any) => {
     try {
-      const { tasks, parallelGroups, agentTemplates, overview } = req.body;
+      const { tasks } = req.body;
 
       if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
         return res.status(400).json({ error: 'Invalid workflow: tasks array is required' });
@@ -1193,7 +988,7 @@ Location: ${process.cwd()}
       await fs.mkdir(outputDir, { recursive: true });
 
       // Start execution asynchronously (don't wait for completion)
-      executeWorkflowFromJSON(tasks, agentTemplates, outputDir, executionId).catch(error => {
+      executeWorkflowFromJSON(tasks, outputDir, executionId, graphManager).catch(error => {
         console.error(`❌ Workflow execution ${executionId} failed:`, error);
       });
 

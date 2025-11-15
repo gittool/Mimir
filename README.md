@@ -1,5 +1,3 @@
-<img width="283" height="380" alt="image" src="https://github.com/user-attachments/assets/f4e3be80-79fe-4e10-b010-9a39b5f70584" />
-
 # Mimir - AI-Powered Memory Bank + Task Management Orchestration with Knowledge Graphs
 
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
@@ -366,7 +364,7 @@ ls -la /path/to/file
 ```bash
 # Don't kill it! Large folders take time to index.
 # Watch the logs to see progress:
-docker compose logs -f mcp-server
+docker compose logs -f mimir-server
 
 # You should see:
 # - "📄 Indexing file: ..." (scanning)
@@ -482,102 +480,29 @@ When you run `docker compose up -d`, you get these services:
 
 > 🔔 Ollama is optional - However, you wont get semantic search unless you provide embeddings. You can point the indexing at any compatible /embeddings endpoint. Or, youll have to fall back to basic text search
 
-> 🔔 copliot-api is NOT required for the memory bank. It is useful if you want to do agent orchestration with it. Any OpenAI-compatible API will also work.
+> 🔔 copliot-api is NOT required for the menory bank. But, it is useful if you want to do agent orchestration with it. Any OpenAI-compatible API will also work
 
 > 🔔 Open-WebUI is also NOT required for the memory bank. It is useful for testing model access and you can use ollama models with it locally
 
 ### How It Works
 
-```mermaid
-graph TB
-    subgraph Client["Client Layer"]
-        A[AI Assistant<br/>Claude Sonnet 4.5<br/>ChatGPT o1<br/>Gemini Pro]
-    end
-    
-    subgraph Server["MCP Server Layer<br/>Port 9042"]
-        B[Mimir MCP Server<br/>Node.js Runtime]
-        B1[13 MCP Tools]
-        B2[Memory Operations]
-        B3[Vector Search]
-        B4[Local Codebase Indexing]
-        
-        B --> B1
-        B --> B2
-        B --> B3
-        B --> B4
-    end
-    
-    subgraph Database["Database Layer<br/>Ports 7474 HTTP, 7687 Bolt"]
-        C[Neo4j Graph Database]
-        C1[Nodes & Edges]
-        C2[Vector Embeddings *default*]
-        C3[Full-text Search *fallback*]
-        
-        C --> C1
-        C --> C2
-        C --> C3
-    end
-    
-    A -->|MCP Protocol<br/>stdio/HTTP| B
-    B2 -->|Cypher Queries| C
-    B3 -->|Vector Operations| C
-    B4 -->|File Sync| C
-    
-    style A fill:#000000,stroke:#01579b,stroke-width:3px
-    style B fill:#000000,stroke:#e65100,stroke-width:3px
-    style C fill:#000000,stroke:#1b5e20,stroke-width:3px
-    
-    style Client fill:#000000,stroke:#1976d2,stroke-width:2px
-    style Server fill:#000000,stroke:#f57c00,stroke-width:2px
-    style Database fill:#000000,stroke:#388e3c,stroke-width:2px
 ```
-
-## Multi-Agent Orchestration flow
-
-```mermaid
-flowchart TD
-    Start([User Request]) --> Ecko{Ecko Agent<br/>Optional<br/>Prompt Optimizer}
-    Ecko -->|Enhanced Request| PM[PM Agent<br/>Research & Planning]
-    
-    PM -->|Creates| Tasks[(Neo4j Graph<br/>Task Nodes<br/>status: pending<br/>maxRetries: 2)]
-    
-    Tasks -->|Worker Claims| Lock{Acquire Lock<br/>Optimistic Locking}
-    Lock -->|Success| Worker[Worker Agent<br/>Filtered Context 90% reduction<br/>Ephemeral Execution]
-    Lock -->|Conflict| Tasks
-    
-    Worker -->|Executes| Output[Worker Output<br/>status: worker_completed<br/>workerOutput stored]
-    
-    Output --> QC[QC Agent<br/>Deliverable Verification<br/>Requirements Check]
-    
-    QC -->|Generate| Score{QC Score<br/>≥ 80?}
-    
-    Score -->|✅ PASS| Complete[Task Complete<br/>status: completed<br/>qcPassed: true]
-    
-    Score -->|❌ FAIL| Retry{attemptNumber<br/>≤ maxRetries?}
-    
-    Retry -->|YES<br/>Retry Available| ErrorCtx[Store Error Context<br/>qcFeedback<br/>issues<br/>requiredFixes]
-    
-    ErrorCtx -->|Increment<br/>attemptNumber| Worker
-    
-    Retry -->|NO<br/>Max Retries<br/>Exceeded| Breaker[🚨 Circuit Breaker<br/>Generate Failure Report]
-    
-    Breaker --> Failed[Task Failed<br/>status: failed<br/>qcFailureReport<br/>improvementNeeded: true]
-    
-    Complete --> Report[PM Final Report<br/>Aggregate Results<br/>execution-report.md]
-    Failed --> Report
-    
-    Report --> End([Complete])
-    
-    style Start fill:#000000,stroke:#01579b,stroke-width:2px
-    style PM fill:#000000,stroke:#e65100,stroke-width:2px
-    style Tasks fill:#000000,stroke:#1b5e20,stroke-width:2px
-    style Worker fill:#000000,stroke:#f57f17,stroke-width:2px
-    style QC fill:#000000,stroke:#6a1b9a,stroke-width:2px
-    style Complete fill:#000000,stroke:#2e7d32,stroke-width:3px
-    style Failed fill:#000000,stroke:#c62828,stroke-width:3px
-    style Breaker fill:#000000,stroke:#d32f2f,stroke-width:3px
-    style Report fill:#000000,stroke:#1565c0,stroke-width:2px
-    style End fill:#000000,stroke:#01579b,stroke-width:2px
+┌─────────────────┐
+│   AI Assistant  │  (Claude, ChatGPT, etc.)
+│  (Your Client)  │
+└────────┬────────┘
+         │ MCP Protocol
+         ▼
+┌─────────────────┐
+│   MCP Server    │  Port 9042
+│   (Node.js)     │  Processes tool calls
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Neo4j DB      │  Ports 7474, 7687
+│  (Graph Store)  │  Persistent storage
+└─────────────────┘
 ```
 
 **Key Points:**
@@ -655,7 +580,7 @@ services:
     ports:
       - "7475:7474"  # Change first number only
       
-  mcp-server:
+  mimir-server:
     ports:
       - "9043:3000"  # Change first number only
 ```
@@ -820,7 +745,7 @@ docker compose restart            # Restart all services
 # View logs
 docker compose logs               # All services
 docker compose logs neo4j         # Neo4j only
-docker compose logs mcp-server    # MCP server only
+docker compose logs mimir-server  # Mimir server only
 
 # Check status
 docker compose ps                 # Container status

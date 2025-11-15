@@ -6,12 +6,12 @@ Get Mimir running in 10 minutes with step-by-step instructions.
 
 Before starting, install these tools:
 
-- **Docker Desktop** (with > 2 GB RAM allocated) → https://www.docker.com/products/docker-desktop/
+- **Docker Desktop** (with 16GB RAM allocated) → https://www.docker.com/products/docker-desktop/
 - **Node.js 18+** → https://nodejs.org/
 - **Git** → https://git-scm.com/
 - **GitHub Copilot Subscription** (Individual, Business, or Enterprise)
 
-> 💡 **Docker Memory**: Mimir requires Docker Desktop with **> 2 GB RAM** allocated. Check: Docker Desktop → Settings → Resources → Memory
+> 💡 **Docker Memory**: Mimir requires Docker Desktop with **at least 16GB RAM** allocated. Check: Docker Desktop → Settings → Resources → Memory
 
 ---
 
@@ -216,12 +216,12 @@ Your AI agents now have:
 docker compose logs -f
 
 # View logs (specific service)
-docker compose logs -f mcp-server
+docker compose logs -f mimir-server
 docker compose logs -f copilot-api
 
 # Restart a service
 docker compose restart copilot-api
-docker compose restart mcp-server
+docker compose restart mimir-server
 
 # Stop everything
 docker compose down
@@ -231,7 +231,7 @@ docker compose up -d
 
 # Rebuild after code changes
 npm run build:docker
-docker compose up -d --build mcp-server
+docker compose up -d --build mimir-server
 
 # Check service health
 docker compose ps
@@ -275,7 +275,7 @@ docker compose logs copilot-api | grep "Please enter"
 docker compose logs
 
 # Common fixes:
-# 1. Docker memory too low (need > 2GB)
+# 1. Docker memory too low (need 16GB)
 # 2. Ports already in use (7474, 4141, 9042, 3000)
 # 3. Neo4j taking too long to start (wait 60 seconds)
 
@@ -297,7 +297,7 @@ docker compose logs neo4j
 docker compose ps neo4j
 
 # If unhealthy, check memory allocation
-# Docker Desktop → Settings → Resources → Memory (need > 2GB)
+# Docker Desktop → Settings → Resources → Memory (need 16GB)
 ```
 
 ### Problem: Port conflicts
@@ -329,8 +329,8 @@ docker compose ps neo4j
 # Check Neo4j password matches .env
 docker compose logs neo4j | grep password
 
-# Restart MCP server after Neo4j is ready
-docker compose restart mcp-server
+# Restart Mimir server after Neo4j is ready
+docker compose restart mimir-server
 ```
 
 ---
@@ -358,7 +358,7 @@ After starting Open-WebUI, enable the pre-packaged Mimir pipelines:
 2. Click your username (bottom-left) → **"Admin Panel"**
 3. Navigate to **"Pipelines"** tab
 4. Toggle each Mimir pipeline to enable it:
-   - ✅ **Mimir Multi-Agent Orchestrator** - Full PM → Worker → QC workflow
+   - ✅ **Mimir Orchestrator** - Full PM → Worker → QC workflow
    - ✅ **Mimir RAG Auto** - Chat with semantic search
    - ✅ **Mimir File Browser** - Browse indexed files
    - ✅ **Mimir Tools Wrapper** - Command shortcuts (`/list_folders`, `/search`)
@@ -379,8 +379,8 @@ Open-WebUI at http://localhost:3000 provides:
 Enable file indexing to let AI agents search your code:
 
 ```bash
-# Inside the mcp-server container
-docker exec -it mcp_server node /app/scripts/setup-watch.js /workspace
+# Inside the mimir-server container
+docker exec -it mimir_server node /app/scripts/setup-watch.js /workspace
 
 # Or from Open-WebUI, use the file browser pipeline
 ```

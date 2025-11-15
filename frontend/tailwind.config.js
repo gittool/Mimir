@@ -61,9 +61,20 @@ export default {
           '0%': { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' },
         },
+        'pulse-border': {
+          '0%, 100%': { 
+            borderColor: '#d4af37',
+            boxShadow: '0 0 0 0 rgba(212, 175, 55, 0.7)'
+          },
+          '50%': { 
+            borderColor: '#e8b84a',
+            boxShadow: '0 0 0 8px rgba(212, 175, 55, 0)'
+          },
+        },
       },
       animation: {
         shimmer: 'shimmer 2s linear infinite',
+        'pulse-border': 'pulse-border 2s ease-in-out infinite',
       },
     },
   },

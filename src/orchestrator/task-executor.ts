@@ -182,6 +182,10 @@ export interface ExecutionResult {
   
   // Circuit Breaker results
   circuitBreakerAnalysis?: string; // QC analysis when circuit breaker triggers
+  
+  // Agent chatter for SSE logging (truncated for browser console)
+  preamblePreview?: string; // First 500 chars of preamble
+  outputPreview?: string; // First 1000 chars of output
 }
 
 /**
@@ -1736,6 +1740,9 @@ ${task.prompt}`;
               circuitBreakerAnalysis,
               attemptNumber: maxRetries,
               graphNodeId: task.id,
+              // Truncated previews for SSE logging
+              preamblePreview: preambleContent.substring(0, 500) + (preambleContent.length > 500 ? '...' : ''),
+              outputPreview: workerOutput.substring(0, 1000) + (workerOutput.length > 1000 ? '...' : ''),
             };
           }
         }
@@ -1800,6 +1807,9 @@ ${task.prompt}`;
             error: `QC agent circuit breaker triggered: ${qcError.message}`,
             attemptNumber,
             graphNodeId: task.id,
+            // Truncated previews for SSE logging
+            preamblePreview: preambleContent.substring(0, 500) + (preambleContent.length > 500 ? '...' : ''),
+            outputPreview: workerOutput.substring(0, 1000) + (workerOutput.length > 1000 ? '...' : ''),
           };
         }
         // Re-throw other errors
@@ -1889,6 +1899,9 @@ ${task.prompt}`;
           qcVerification: qcResult, // FULL QC result
           qcVerificationHistory,
           attemptNumber,
+          // Truncated previews for SSE logging
+          preamblePreview: preambleContent.substring(0, 500) + (preambleContent.length > 500 ? '...' : ''),
+          outputPreview: workerOutput.substring(0, 1000) + (workerOutput.length > 1000 ? '...' : ''),
         };
         
         const graphNodeId = await storeTaskResultInGraph(task, executionResult);
@@ -2006,6 +2019,9 @@ ${task.prompt}`;
     qcVerificationHistory,
     qcFailureReport,
     attemptNumber: maxRetries,
+    // Truncated previews for SSE logging
+    preamblePreview: preambleContent.substring(0, 500) + (preambleContent.length > 500 ? '...' : ''),
+    outputPreview: workerOutput.substring(0, 1000) + (workerOutput.length > 1000 ? '...' : ''),
   };
   
   const graphNodeId = await storeTaskResultInGraph(task, executionResult);

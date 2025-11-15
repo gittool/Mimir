@@ -1,4 +1,4 @@
-FROM node:24-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -16,15 +16,23 @@ RUN rm -f package-lock.json && \
     npm config delete //registry.npmjs.org/:_authToken || true && \
     npm install --legacy-peer-deps --no-audit --no-fund
 
-# Copy source and build
+# Copy source and build backend
 COPY . .
 RUN npm run build
+
+# Build frontend
+WORKDIR /app/frontend
+RUN npm install --legacy-peer-deps --no-audit --no-fund && \
+    npm run build
+
+# Return to app root
+WORKDIR /app
 
 # Remove dev dependencies after build
 # RUN npm prune --omit=dev
 
 # Final runtime image
-FROM node:24-alpine AS production
+FROM node:22-alpine AS production
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -38,6 +46,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/.mimir ./.mimir
 COPY --from=builder /app/docs ./docs
+COPY --from=builder /app/frontend/dist ./frontend/dist
 
 # Ensure non-root user owns the app directory and switch to it
 RUN chown -R node:node /app
