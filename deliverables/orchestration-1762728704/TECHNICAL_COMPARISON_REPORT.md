@@ -278,7 +278,7 @@ For pure vector search workloads without graph requirements, specialized solutio
 ---
 
 **Citations:**
-- [Mimir AGENTS.md](../AGENTS.md)
+- [Mimir AGENTS.md](../../docs/AGENTS.md)
 - [Mimir MULTI_AGENT_GRAPH_RAG.md](../docs/architecture/MULTI_AGENT_GRAPH_RAG.md)
 - [Neo4j Vector Search Documentation](https://neo4j.com/docs/cypher-manual/current/indexes-for-vector-search/)
 - [Pinecone Documentation](https://docs.pinecone.io)

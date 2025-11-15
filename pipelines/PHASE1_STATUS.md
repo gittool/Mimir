@@ -247,7 +247,7 @@ Once Phase 1 is stable and proven:
 - `test_phase1.py` - Connection test script
 - `README.md` - User documentation
 - `../docker-compose.yml` - Service configuration
-- `../OPENWEBUI_INTEGRATION.md` - Full integration plan
+- `../docs/integration/OPENWEBUI_INTEGRATION.md` - Full integration plan
 
 ---
 

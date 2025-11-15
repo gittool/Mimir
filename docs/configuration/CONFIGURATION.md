@@ -60,6 +60,34 @@ Only used when `MIMIR_FEATURE_VECTOR_EMBEDDINGS=true`:
 | `NODE_ENV` | Node environment | `production` |
 | `PORT` | HTTP server port | `3000` |
 
+### Auto-Indexing Features
+
+| Variable | Description | Default | Notes |
+|----------|-------------|---------|-------|
+| `MIMIR_AUTO_INDEX_DOCS` | Auto-index documentation on startup | `true` | Allows semantic search of Mimir docs |
+
+**Documentation Auto-Indexing:**
+
+By default, Mimir automatically indexes its own documentation (`/app/docs`) on startup. This enables immediate semantic search of documentation:
+
+```bash
+# Enable (default)
+MIMIR_AUTO_INDEX_DOCS=true
+
+# Disable
+MIMIR_AUTO_INDEX_DOCS=false
+```
+
+Benefits:
+- ✅ Query documentation via natural language immediately
+- ✅ No manual indexing required
+- ✅ Documentation is searchable on first startup
+
+Example queries:
+- "How do I configure embeddings?"
+- "Show me the IDE integration guide"
+- "Explain the multi-agent architecture"
+
 ---
 
 ## 📁 Configuration Files

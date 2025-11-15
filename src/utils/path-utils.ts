@@ -182,6 +182,13 @@ export function translateHostToContainer(hostPath: string): string {
     return normalizedPath;
   }
   
+  // Special exception: /app/docs is the built-in documentation folder
+  // This is always accessible inside the container and doesn't need translation
+  if (normalizedPath.startsWith('/app/docs/')) {
+    console.log(`📚 Using built-in docs path: ${normalizedPath}`);
+    return normalizedPath;
+  }
+  
   // Check if the path is under the host workspace root
   if (normalizedPath.startsWith(hostRoot)) {
     // Calculate relative path from host root

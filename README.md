@@ -52,7 +52,9 @@ Mimir is a Model Context Protocol (MCP) server that provides AI assistants (Clau
 
 ## ⚡ Quick Start (3 Steps)
 
-> 💡 **New to Mimir?** Check out the [5-minute Quick Start Guide](QUICKSTART.md) for a step-by-step walkthrough.
+> 💡 **New to Mimir?** Check out the [5-minute Quick Start Guide](docs/getting-started/QUICKSTART.md) for a step-by-step walkthrough.
+
+> 🔌 **Connecting to IDE?** See the [IDE Integration Guide](docs/guides/IDE_INTEGRATION_GUIDE.md) for VS Code, Cursor, and Windsurf setup!
 
 > 🎯 **VS Code Users?** Try the [Dev Container setup](.devcontainer/README.md) for instant environment with zero configuration!
 
@@ -148,12 +150,31 @@ MIMIR_EMBEDDINGS_MODEL=nomic-embed-text       # For ollama
 #### Advanced Settings (Optional)
 
 ```bash
+# Auto-index Mimir documentation on startup (default: true)
+# Allows users to immediately query Mimir's docs via semantic search
+MIMIR_AUTO_INDEX_DOCS=true
+
 # Corporate Proxy (if needed)
 HTTP_PROXY=http://proxy.company.com:8080
 HTTPS_PROXY=http://proxy.company.com:8080
 
 # Custom CA Certificates (if needed)
 SSL_CERT_FILE=/path/to/corporate-ca.crt
+```
+
+**Documentation Auto-Indexing:**
+
+By default, Mimir automatically indexes its own documentation (`/app/docs`) on startup. This allows you to immediately query Mimir's documentation using semantic search:
+
+```
+"How do I configure embeddings?"
+"Show me the IDE integration guide"
+"Explain the multi-agent architecture"
+```
+
+To disable auto-indexing, set in `.env`:
+```bash
+MIMIR_AUTO_INDEX_DOCS=false
 ```
 
 See `env.example` or `docker-compose.yml` for complete list of configuration options.
@@ -765,7 +786,7 @@ services:
 - 🐳 [Docker Deployment](docs/guides/DOCKER_DEPLOYMENT_GUIDE.md) - Production deployment
 
 **For AI Agent Developers:**
-- 🤖 [AGENTS.md](AGENTS.md) - Complete agent workflow guide
+- 🤖 [AGENTS.md](docs/AGENTS.md) - Complete agent workflow guide
 - 🔧 [Configuration Guide](docs/configuration/CONFIGURATION.md) - VSCode, Cursor, Claude Desktop setup
 - 🧪 [Testing Guide](docs/testing/TESTING_GUIDE.md) - Test suite overview
 

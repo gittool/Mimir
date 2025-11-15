@@ -317,7 +317,101 @@ async function restoreFileWatchers() {
     }
   }
   
+  // Auto-index documentation folder on first startup
+  console.error('🔍 Checking if documentation needs indexing...');
+  try {
+    await ensureDocsIndexed(configManager);
+  } catch (error: any) {
+    console.error('❌ Error in ensureDocsIndexed:', error.message);
+  }
+  
   console.error('✅ File watcher initialization complete');
+}
+
+/**
+ * Ensure documentation folder is indexed on startup
+ * This allows users to immediately query Mimir's documentation
+ */
+async function ensureDocsIndexed(configManager: WatchConfigManager) {
+  console.error('📖 ensureDocsIndexed: Starting...');
+  
+  // Check feature flag (default: true)
+  const autoIndexDocs = process.env.MIMIR_AUTO_INDEX_DOCS !== 'false';
+  console.error(`📖 Feature flag check: MIMIR_AUTO_INDEX_DOCS=${process.env.MIMIR_AUTO_INDEX_DOCS}, enabled=${autoIndexDocs}`);
+  
+  if (!autoIndexDocs) {
+    console.error('ℹ️  Auto-indexing documentation disabled (MIMIR_AUTO_INDEX_DOCS=false)');
+    return;
+  }
+  
+  const fs = await import('fs').then(m => m.promises);
+  
+  // Documentation is always at /app/docs in container
+  const docsPath = '/app/docs';
+  console.error(`📖 Checking if ${docsPath} exists...`);
+  
+  // Verify docs folder exists
+  try {
+    await fs.access(docsPath);
+    console.error(`📚 Found documentation at: ${docsPath}`);
+  } catch {
+    console.error('⚠️  Documentation folder not found at /app/docs - skipping auto-indexing');
+    return;
+  }
+  
+  // Check if docs are already indexed (either directly or via parent folder)
+  console.error('📖 Querying Neo4j for existing doc files...');
+  const driver = graphManager.getDriver();
+  const session = driver.session();
+  try {
+    const result = await session.run(`
+      MATCH (f:file)
+      WHERE f.path STARTS WITH '/app/docs/' OR f.path = '/app/docs'
+      RETURN count(f) as docCount
+      LIMIT 1
+    `);
+    
+    const docCount = result.records[0]?.get('docCount')?.toNumber() || 0;
+    console.error(`📖 Found ${docCount} doc files in Neo4j`);
+    
+    if (docCount > 0) {
+      console.error(`✅ Documentation already indexed (${docCount} files found)`);
+      console.error('   Docs are searchable via semantic search!');
+      return;
+    }
+  } finally {
+    await session.close();
+  }
+  
+  console.error('📖 No docs found, proceeding to index /app/docs...');
+  
+  // Create new watch configuration for docs
+  console.error('📖 Auto-indexing documentation folder for first-time users...');
+  
+  try {
+    const { handleIndexFolder } = await import('./tools/fileIndexing.tools.js');
+    
+    const result = await handleIndexFolder(
+      {
+        path: docsPath,
+        recursive: true,
+        file_patterns: ['*.md', '*.txt'],
+        ignore_patterns: ['node_modules', '.git', 'archive'],
+        generate_embeddings: true, // Enable embeddings for better doc search
+      },
+      graphManager.getDriver(),
+      fileWatchManager
+    );
+    
+    if (result.status === 'success') {
+      console.error(`✅ Documentation indexed: ${result.files_indexed || 0} files`);
+      console.error('   Users can now query Mimir docs via semantic search!');
+    } else if (result.status === 'error') {
+      console.error(`⚠️  Failed to index documentation: ${result.message}`);
+    }
+  } catch (error: any) {
+    console.error(`❌ Error auto-indexing docs: ${error.message}`);
+  }
 }
 
 // ============================================================================

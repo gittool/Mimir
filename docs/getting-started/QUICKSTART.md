@@ -158,6 +158,21 @@ curl http://localhost:4141/v1/models
 # Should return JSON with available models
 ```
 
+**📚 Documentation Auto-Indexed:**
+
+On first startup, Mimir automatically indexes its own documentation for semantic search. You can immediately query Mimir's documentation using natural language:
+
+```
+"How do I configure embeddings?"
+"Show me the IDE integration guide"
+"Explain the multi-agent architecture"
+```
+
+To disable this feature, set in `.env`:
+```bash
+MIMIR_AUTO_INDEX_DOCS=false
+```
+
 ---
 
 ## Step 7: Access Mimir Web UI
@@ -359,7 +374,7 @@ By default, Mimir uses **gpt-4.1** to avoid premium usage. To switch models:
 
 ### 2. Learn the Architecture
 
-- **[AGENTS.md](AGENTS.md)** - Multi-agent workflows and best practices
+- **[AGENTS.md](../AGENTS.md)** - Multi-agent workflows and best practices
 - **[README.md](README.md)** - Complete feature documentation
 - **[docs/architecture/MULTI_AGENT_GRAPH_RAG.md](docs/architecture/MULTI_AGENT_GRAPH_RAG.md)** - Technical architecture
 

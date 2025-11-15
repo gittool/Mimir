@@ -2,13 +2,17 @@
 
 Complete documentation for the Mimir MCP Server - TODO Tracker, External Memory, and Knowledge Graph system.
 
-## � Quick Start
+## 🚀 Quick Start
 
 **New to Mimir? Start here:**
 
-- **[MEMORY_GUIDE.md](guides/MEMORY_GUIDE.md)** - **START HERE:** External memory system for AI agents
-- **[ORCHESTRATOR_QUICKSTART.md](guides/ORCHESTRATOR_QUICKSTART.md)** - Quick start for multi-agent orchestration
-- **[DOCKER_DEPLOYMENT_GUIDE.md](guides/DOCKER_DEPLOYMENT_GUIDE.md)** - Deploy with Docker (5-minute setup)
+- **[QUICKSTART.md](getting-started/QUICKSTART.md)** - **START HERE:** 5-minute setup guide
+- **[IDE_INTEGRATION_GUIDE.md](guides/IDE_INTEGRATION_GUIDE.md)** - **⭐ Connect Mimir to VS Code, Cursor, Windsurf**
+- **[QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md)** - Quick command reference
+- **[ECKO_QUICKSTART.md](getting-started/ECKO_QUICKSTART.md)** - Ecko prompt architect quick start
+- **[MEMORY_GUIDE.md](guides/MEMORY_GUIDE.md)** - External memory system for AI agents
+- **[ORCHESTRATOR_QUICKSTART.md](guides/ORCHESTRATOR_QUICKSTART.md)** - Multi-agent orchestration quick start
+- **[DOCKER_DEPLOYMENT_GUIDE.md](guides/DOCKER_DEPLOYMENT_GUIDE.md)** - Deploy with Docker
 
 ## 📖 User Guides
 
@@ -29,6 +33,18 @@ Complete documentation for the Mimir MCP Server - TODO Tracker, External Memory,
 - **[ORCHESTRATOR_QUICKSTART.md](guides/ORCHESTRATOR_QUICKSTART.md)** - Multi-agent orchestration quick start
 - **[ORCHESTRATOR_README.md](guides/ORCHESTRATOR_README.md)** - Detailed orchestration documentation
 
+### File Management
+- **[FILE_BROWSER_GUIDE.md](guides/FILE_BROWSER_GUIDE.md)** - File browser integration and usage
+
+### IDE Integration
+- **[IDE_INTEGRATION_GUIDE.md](guides/IDE_INTEGRATION_GUIDE.md)** - **⭐ Complete guide for VS Code, Cursor, Windsurf setup**
+
+## 🔗 Integration
+
+**Connecting Mimir with external platforms:**
+
+- **[OPENWEBUI_INTEGRATION.md](integration/OPENWEBUI_INTEGRATION.md)** - Open WebUI integration guide
+
 ## ⚙️ Configuration
 
 **Setup and configuration for different environments:**
@@ -42,6 +58,8 @@ Complete documentation for the Mimir MCP Server - TODO Tracker, External Memory,
 - **[MULTI_AGENT_EXECUTIVE_SUMMARY.md](architecture/MULTI_AGENT_EXECUTIVE_SUMMARY.md)** - High-level strategic overview
 - **[MULTI_AGENT_GRAPH_RAG.md](architecture/MULTI_AGENT_GRAPH_RAG.md)** - PM/Worker/QC agent pattern (technical deep dive)
 - **[MULTI_AGENT_ROADMAP.md](architecture/MULTI_AGENT_ROADMAP.md)** - **⭐ Implementation roadmap with deployment & enterprise features**
+- **[NAMING.md](architecture/NAMING.md)** - Why "Mimir"? Norse mythology connections
+- **[HISTORICAL_TRACKING_SYSTEM.md](architecture/HISTORICAL_TRACKING_SYSTEM.md)** - Task execution history and analysis
 - **[CONVERSATION_ANALYSIS.md](architecture/CONVERSATION_ANALYSIS.md)** - Architecture validation against research
 - **[GRAPH_RAG_RESEARCH.md](architecture/GRAPH_RAG_RESEARCH.md)** - Research backing and Graph-RAG methodology
 - **[ANALYSIS_MCP_MEMORY.md](architecture/ANALYSIS_MCP_MEMORY.md)** - Memory system patterns and analysis
@@ -93,4 +111,4 @@ See **[research/](research/)** for research papers, comparisons, and technical a
 
 ---
 
-**Back to:** [Main README](../README.md) | [Agent Instructions](../AGENTS.md)
+**Back to:** [Main README](../README.md) | [Agent Instructions](AGENTS.md)

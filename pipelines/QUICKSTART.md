@@ -176,7 +176,7 @@ curl http://localhost:7474
 
 - **Full README**: `pipelines/README.md`
 - **Status Document**: `pipelines/PHASE1_STATUS.md`
-- **Integration Plan**: `OPENWEBUI_INTEGRATION.md`
+- **Integration Plan**: `../docs/integration/OPENWEBUI_INTEGRATION.md`
 
 ---
 

@@ -516,8 +516,8 @@ Test model changes with simple tasks before running complex orchestrations.
 
 ## Related Documentation
 
-- **[QUICKSTART.md](../../QUICKSTART.md)** - Initial setup
-- **[AGENTS.md](../../AGENTS.md)** - Multi-agent workflows
+- **[QUICKSTART.md](../getting-started/QUICKSTART.md)** - Initial setup
+- **[AGENTS.md](../AGENTS.md)** - Multi-agent workflows
 - **[copilot-api README](https://github.com/ericc-ch/copilot-api)** - Copilot API documentation
 - **[Ollama Models](https://ollama.com/library)** - Available Ollama models
 

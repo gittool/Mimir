@@ -205,4 +205,4 @@ docker compose logs open-webui | tail -50
 
 - **[PIPELINE_CONFIGURATION.md](../../docs/guides/PIPELINE_CONFIGURATION.md)** - Complete pipeline setup guide
 - **[LLM_PROVIDER_GUIDE.md](../../docs/guides/LLM_PROVIDER_GUIDE.md)** - Switching LLM providers
-- **[QUICKSTART.md](../../QUICKSTART.md)** - Initial setup
+- **[QUICKSTART.md](../../docs/getting-started/QUICKSTART.md)** - Initial setup

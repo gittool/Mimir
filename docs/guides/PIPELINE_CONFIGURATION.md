@@ -492,9 +492,9 @@ docker compose up -d --force-recreate open-webui
 
 ## Related Documentation
 
-- **[QUICKSTART.md](../../QUICKSTART.md)** - Initial setup
+- **[QUICKSTART.md](../getting-started/QUICKSTART.md)** - Initial setup
 - **[LLM_PROVIDER_GUIDE.md](LLM_PROVIDER_GUIDE.md)** - Detailed LLM configuration
-- **[AGENTS.md](../../AGENTS.md)** - Multi-agent workflows
+- **[AGENTS.md](../AGENTS.md)** - Multi-agent workflows
 - **[Open-WebUI Docs](https://docs.openwebui.com/)** - Official documentation
 
 ---

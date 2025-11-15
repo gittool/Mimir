@@ -191,6 +191,16 @@ export class WatchConfigManager {
    * Map Neo4j properties to WatchConfig
    */
   private mapToWatchConfig(props: any): WatchConfig {
+    // Helper to convert Neo4j Integer to JS number
+    const toNumber = (value: any): number => {
+      if (value === null || value === undefined) return 0;
+      if (typeof value === 'number') return value;
+      if (typeof value === 'object' && 'toNumber' in value) {
+        return value.toNumber();
+      }
+      return 0;
+    };
+    
     return {
       id: props.id,
       path: props.path,
@@ -203,7 +213,7 @@ export class WatchConfigManager {
       added_date: props.added_date,
       last_indexed: props.last_indexed,
       last_updated: props.last_updated,
-      files_indexed: props.files_indexed || 0,
+      files_indexed: toNumber(props.files_indexed),
       error: props.error
     };
   }

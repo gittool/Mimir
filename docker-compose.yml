@@ -141,6 +141,11 @@ services:
       - MIMIR_EMBEDDINGS_CHUNK_OVERLAP=${MIMIR_EMBEDDINGS_CHUNK_OVERLAP:-100}
       - MIMIR_EMBEDDINGS_DELAY_MS=${MIMIR_EMBEDDINGS_DELAY_MS:-0}
       - MIMIR_EMBEDDINGS_MAX_RETRIES=${MIMIR_EMBEDDINGS_MAX_RETRIES:-3}
+      
+      # Auto-index documentation on startup (default: true)
+      # Allows users to immediately query Mimir's documentation via semantic search
+      # Set to 'false' in .env to disable: MIMIR_AUTO_INDEX_DOCS=false
+      - MIMIR_AUTO_INDEX_DOCS=${MIMIR_AUTO_INDEX_DOCS:-true}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

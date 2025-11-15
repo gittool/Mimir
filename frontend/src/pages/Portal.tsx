@@ -31,7 +31,7 @@ export function Portal() {
   const [isDragging, setIsDragging] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [savingMemory, setSavingMemory] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('gpt-5-mini');
+  const [selectedModel, setSelectedModel] = useState('gpt-4.1');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -44,7 +44,7 @@ export function Portal() {
   const MODELS = [
     { id: 'gpt-4o', name: 'GPT-4o', category: 'GPT' },
     { id: 'gpt-4.1', name: 'GPT-4.1', category: 'GPT' },
-    { id: 'gpt-5-mini', name: 'GPT-5', category: 'GPT' },
+    { id: 'gpt-5-mini', name: 'GPT-5 mini', category: 'GPT' },
   ];
 
   // Set page title

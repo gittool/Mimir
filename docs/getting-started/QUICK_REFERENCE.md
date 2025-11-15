@@ -178,7 +178,7 @@ GRAPH-RAG-TODO/
 ├── docker-compose.yml         ← Services config
 ├── start-openwebui.ps1        ← Windows start
 ├── start-openwebui.sh         ← Linux/Mac start
-└── OPENWEBUI_INTEGRATION.md   ← This summary
+└── ../integration/OPENWEBUI_INTEGRATION.md   ← This summary
 ```
 
 ## 🎯 Example Prompts

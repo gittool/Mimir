@@ -368,7 +368,7 @@ Once Phase 1 is stable:
 - [Open-WebUI Pipelines Docs](https://github.com/open-webui/pipelines)
 - [Mimir Architecture](../docs/architecture/MULTI_AGENT_GRAPH_RAG.md)
 - [MCP Protocol Spec](https://spec.modelcontextprotocol.io/)
-- [Integration Summary](../OPENWEBUI_INTEGRATION.md)
+- [Integration Summary](../docs/integration/OPENWEBUI_INTEGRATION.md)
 
 ---
 
