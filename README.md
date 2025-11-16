@@ -801,6 +801,7 @@ services:
 - 🧠 [Memory Guide](docs/guides/MEMORY_GUIDE.md) - How to use the memory system
 - 🕸️ [Knowledge Graph Guide](docs/guides/knowledge-graph.md) - Understanding graph relationships
 - 🐳 [Docker Deployment](docs/guides/DOCKER_DEPLOYMENT_GUIDE.md) - Production deployment
+- 🎨 **[Portal UI User Guide](docs/UI_USER_GUIDE.md) - Complete web interface tutorial** ⭐
 
 **For AI Agent Developers:**
 - 🤖 [AGENTS.md](docs/AGENTS.md) - Complete agent workflow guide
@@ -809,7 +810,7 @@ services:
 
 **Advanced Topics:**
 - 🏗️ [Multi-Agent Architecture](docs/architecture/MULTI_AGENT_GRAPH_RAG.md) - System architecture
-- �️ [Implementation Roadmap](docs/architecture/MULTI_AGENT_ROADMAP.md) - Development roadmap
+- 🛣️ [Implementation Roadmap](docs/architecture/MULTI_AGENT_ROADMAP.md) - Development roadmap
 - 📊 [Research](docs/research/) - Academic research and analysis
 
 ## 🔧 Development

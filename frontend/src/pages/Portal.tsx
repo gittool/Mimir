@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, User, Paperclip, X, Image as ImageIcon, RotateCcw, ChevronDown } from 'lucide-react';
+import { Send, Sparkles, User, Paperclip, X, Image as ImageIcon, RotateCcw, ChevronDown, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { EyeOfMimir } from '../components/EyeOfMimir';
 import { OrchestrationStudioIcon } from '../components/OrchestrationStudioIcon';
@@ -9,6 +9,37 @@ import { apiClient } from '../utils/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+/**
+ * Represents a chat message in the conversation.
+ * 
+ * @interface Message
+ * @property {string} id - Unique identifier for the message (timestamp-based)
+ * @property {'user' | 'assistant'} role - The sender of the message
+ * @property {string} content - The text content of the message
+ * @property {Date} timestamp - When the message was created
+ * @property {AttachedFile[]} [attachments] - Optional array of attached files
+ * 
+ * @example
+ * ```typescript
+ * const userMessage: Message = {
+ *   id: '1700000000000',
+ *   role: 'user',
+ *   content: 'What is the meaning of life?',
+ *   timestamp: new Date(),
+ *   attachments: []
+ * };
+ * ```
+ * 
+ * @example
+ * ```typescript
+ * const assistantMessage: Message = {
+ *   id: '1700000000001',
+ *   role: 'assistant',
+ *   content: '42, according to The Hitchhiker\'s Guide to the Galaxy.',
+ *   timestamp: new Date()
+ * };
+ * ```
+ */
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -17,12 +48,99 @@ interface Message {
   attachments?: AttachedFile[];
 }
 
+/**
+ * Represents a file attachment with preview capabilities.
+ * 
+ * @interface AttachedFile
+ * @property {File} file - The native browser File object
+ * @property {string} preview - Base64-encoded data URL for preview display
+ * @property {string} id - Unique identifier for this attachment
+ * 
+ * @example
+ * ```typescript
+ * const imageAttachment: AttachedFile = {
+ *   file: new File(['...'], 'screenshot.png', { type: 'image/png' }),
+ *   preview: 'data:image/png;base64,iVBORw0KGgoAAAANS...',
+ *   id: '1700000000000-0.12345'
+ * };
+ * ```
+ */
 interface AttachedFile {
   file: File;
   preview: string;
   id: string;
 }
 
+/**
+ * Represents a chatmode/preamble configuration.
+ * 
+ * @interface Preamble
+ * @property {string} name - Internal identifier (e.g., 'mimir-v2', 'debug')
+ * @property {string} filename - Full filename (e.g., 'claudette-mimir-v2.md')
+ * @property {string} displayName - Human-readable name for UI (e.g., 'Mimir V2')
+ * 
+ * @example
+ * ```typescript
+ * const debugMode: Preamble = {
+ *   name: 'debug',
+ *   filename: 'claudette-debug.md',
+ *   displayName: 'Debug'
+ * };
+ * ```
+ */
+interface Preamble {
+  name: string;
+  filename: string;
+  displayName: string;
+}
+
+/**
+ * Main chat portal component for interacting with the Mimir AI system.
+ * 
+ * Provides a full-featured chat interface with:
+ * - Dynamic model selection from OpenAI-compatible API
+ * - Customizable preambles/chatmodes for different agent behaviors
+ * - File attachment support (images, PDFs, text files)
+ * - Streaming responses with markdown rendering
+ * - Memory persistence for conversations
+ * - localStorage-based preferences (default model, custom preambles)
+ * 
+ * @component
+ * @returns {JSX.Element} The rendered portal interface
+ * 
+ * @example
+ * Basic usage in router:
+ * ```typescript
+ * import { Portal } from './pages/Portal';
+ * 
+ * function App() {
+ *   return (
+ *     <Routes>
+ *       <Route path="/" element={<Portal />} />
+ *     </Routes>
+ *   );
+ * }
+ * ```
+ * 
+ * @example
+ * With custom navigation wrapper:
+ * ```typescript
+ * <BrowserRouter>
+ *   <Portal />
+ * </BrowserRouter>
+ * ```
+ * 
+ * @example
+ * Testing component initialization:
+ * ```typescript
+ * import { render, screen } from '@testing-library/react';
+ * 
+ * test('renders portal with greeting', () => {
+ *   render(<Portal />);
+ *   expect(screen.getByText(/How may I give counsel/i)).toBeInTheDocument();
+ * });
+ * ```
+ */
 export function Portal() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -31,7 +149,14 @@ export function Portal() {
   const [isDragging, setIsDragging] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [savingMemory, setSavingMemory] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('gpt-4.1');
+  const [availableModels, setAvailableModels] = useState<Array<{id: string; name: string}>>([]);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  const [selectedPreamble, setSelectedPreamble] = useState('limerick');
+  const [availablePreambles, setAvailablePreambles] = useState<Preamble[]>([]);
+  const [showCustomPreambleModal, setShowCustomPreambleModal] = useState(false);
+  const [customPreambleText, setCustomPreambleText] = useState('');
+  const [customPreambleContent, setCustomPreambleContent] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -40,16 +165,74 @@ export function Portal() {
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
   const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'text/plain'];
 
-  // Available models
-  const MODELS = [
-    { id: 'gpt-4o', name: 'GPT-4o', category: 'GPT' },
-    { id: 'gpt-4.1', name: 'GPT-4.1', category: 'GPT' },
-    { id: 'gpt-5-mini', name: 'GPT-5 mini', category: 'GPT' },
-  ];
-
   // Set page title
   useEffect(() => {
     document.title = 'The Well of Mímir - Seek Ancient Wisdom';
+  }, []);
+
+  // Load default model from localStorage on mount
+  useEffect(() => {
+    const savedDefault = localStorage.getItem('mimir-default-model');
+    if (savedDefault) {
+      setDefaultModel(savedDefault);
+    }
+  }, []);
+
+  // Load custom preamble from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('mimir-custom-preamble');
+    if (saved) {
+      setCustomPreambleContent(saved);
+    }
+  }, []);
+
+  // Fetch available models from OpenAI-compatible API
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await fetch('/v1/models');
+        if (response.ok) {
+          const data = await response.json();
+          const models = data.data?.map((model: any) => ({
+            id: model.id,
+            name: model.id, // Use ID as name, can be formatted later
+          })) || [];
+          setAvailableModels(models);
+          
+          // Set initial selected model: user default > first available
+          if (models.length > 0) {
+            const savedDefault = localStorage.getItem('mimir-default-model');
+            if (savedDefault && models.some((m: any) => m.id === savedDefault)) {
+              setSelectedModel(savedDefault);
+            } else {
+              setSelectedModel(models[0].id);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch models:', error);
+        // Fallback to a default model if API fails
+        setAvailableModels([{ id: 'gpt-4.1', name: 'gpt-4.1' }]);
+        setSelectedModel('gpt-4.1');
+      }
+    };
+    fetchModels();
+  }, []);
+
+  // Fetch available preambles
+  useEffect(() => {
+    const fetchPreambles = async () => {
+      try {
+        const response = await fetch('/api/preambles');
+        if (response.ok) {
+          const data = await response.json();
+          setAvailablePreambles(data.preambles || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch preambles:', error);
+      }
+    };
+    fetchPreambles();
   }, []);
 
   // Auto-scroll to bottom when messages change
@@ -65,7 +248,157 @@ export function Portal() {
     }
   }, [input]);
 
-  // File handling functions
+  /**
+   * Opens the custom preamble modal dialog for editing.
+   * Loads existing custom preamble content if available.
+   * 
+   * @function handleOpenCustomPreambleModal
+   * @returns {void}
+   * 
+   * @example
+   * Called when user clicks the Plus button:
+   * ```typescript
+   * <button onClick={handleOpenCustomPreambleModal}>
+   *   <Plus />
+   * </button>
+   * ```
+   */
+  const handleOpenCustomPreambleModal = () => {
+    setCustomPreambleText(customPreambleContent || '');
+    setShowCustomPreambleModal(true);
+  };
+
+  /**
+   * Saves the custom preamble to localStorage and activates it.
+   * Sets the chatmode selector to 'custom'.
+   * 
+   * @function handleSaveCustomPreamble
+   * @returns {void}
+   * 
+   * @example
+   * User saves custom preamble:
+   * ```typescript
+   * // User enters custom preamble text
+   * setCustomPreambleText('You are a specialized SQL expert...');
+   * handleSaveCustomPreamble();
+   * // Result: localStorage updated, modal closed, 'Custom' mode active
+   * ```
+   */
+  const handleSaveCustomPreamble = () => {
+    if (customPreambleText.trim()) {
+      localStorage.setItem('mimir-custom-preamble', customPreambleText);
+      setCustomPreambleContent(customPreambleText);
+      setSelectedPreamble('custom');
+      setShowCustomPreambleModal(false);
+    }
+  };
+
+  /**
+   * Cancels custom preamble editing and closes the modal.
+   * Does not save changes.
+   * 
+   * @function handleCancelCustomPreamble
+   * @returns {void}
+   * 
+   * @example
+   * ```typescript
+   * <button onClick={handleCancelCustomPreamble}>Cancel</button>
+   * ```
+   */
+  const handleCancelCustomPreamble = () => {
+    setShowCustomPreambleModal(false);
+    setCustomPreambleText('');
+  };
+
+  /**
+   * Removes saved custom preamble from localStorage.
+   * Reverts to first available predefined preamble.
+   * 
+   * @function handleClearCustomPreamble
+   * @returns {void}
+   * 
+   * @example
+   * User deletes custom preamble:
+   * ```typescript
+   * handleClearCustomPreamble();
+   * // Result: localStorage key removed, 'Custom' option disappears from dropdown
+   * ```
+   */
+  const handleClearCustomPreamble = () => {
+    localStorage.removeItem('mimir-custom-preamble');
+    setCustomPreambleContent(null);
+    setSelectedPreamble(availablePreambles[0]?.name || 'limerick');
+  };
+
+  /**
+   * Saves the currently selected model as the user's default.
+   * Persists preference to localStorage for future sessions.
+   * 
+   * @function handleSaveDefaultModel
+   * @returns {void}
+   * 
+   * @example
+   * User sets gpt-4.1 as default:
+   * ```typescript
+   * setSelectedModel('gpt-4.1');
+   * handleSaveDefaultModel();
+   * // Next session: gpt-4.1 auto-selected on load
+   * ```
+   */
+  const handleSaveDefaultModel = () => {
+    localStorage.setItem('mimir-default-model', selectedModel);
+    setDefaultModel(selectedModel);
+  };
+
+  /**
+   * Computed boolean indicating if the selected model is the user's default.
+   * Used to toggle UI state between "Save as Default" and "✓ Default Model".
+   * 
+   * @constant {boolean} isDefaultModel
+   * 
+   * @example
+   * Conditional rendering:
+   * ```typescript
+   * {isDefaultModel ? (
+   *   <span>✓ Default Model</span>
+   * ) : (
+   *   <span>Save as Default</span>
+   * )}
+   * ```
+   */
+  const isDefaultModel = defaultModel === selectedModel || (!defaultModel && availableModels[0]?.id === selectedModel);
+
+  /**
+   * Validates a file against size and type constraints.
+   * 
+   * @function validateFile
+   * @param {File} file - The file to validate
+   * @returns {string | null} Error message if validation fails, null if valid
+   * 
+   * @example
+   * Valid file:
+   * ```typescript
+   * const file = new File(['content'], 'doc.pdf', { type: 'application/pdf' });
+   * const error = validateFile(file);
+   * // error === null (file is valid)
+   * ```
+   * 
+   * @example
+   * File too large:
+   * ```typescript
+   * const largeFile = new File([new ArrayBuffer(20 * 1024 * 1024)], 'big.png');
+   * const error = validateFile(largeFile);
+   * // error === 'File "big.png" is too large. Maximum size is 10MB.'
+   * ```
+   * 
+   * @example
+   * Invalid type:
+   * ```typescript
+   * const exe = new File(['data'], 'program.exe', { type: 'application/x-msdownload' });
+   * const error = validateFile(exe);
+   * // error === 'File type "application/x-msdownload" is not supported...'
+   * ```
+   */
   const validateFile = (file: File): string | null => {
     if (file.size > MAX_FILE_SIZE) {
       return `File "${file.name}" is too large. Maximum size is 10MB.`;
@@ -76,6 +409,29 @@ export function Portal() {
     return null;
   };
 
+  /**
+   * Clears the entire chat conversation and resets UI state.
+   * Removes all messages, attached files, and input text.
+   * 
+   * @function clearChat
+   * @returns {void}
+   * 
+   * @example
+   * User clicks "New Chat" button:
+   * ```typescript
+   * <button onClick={clearChat}>New Chat</button>
+   * // Result: Fresh chat screen with Eye of Mimir greeting
+   * ```
+   * 
+   * @example
+   * Programmatic reset after error:
+   * ```typescript
+   * if (sessionExpired) {
+   *   clearChat();
+   *   showNotification('Session expired. Starting new chat.');
+   * }
+   * ```
+   */
   const clearChat = () => {
     setMessages([]);
     setAttachedFiles([]);
@@ -215,6 +571,17 @@ export function Portal() {
     setIsLoading(true);
 
     try {
+      // Build messages array - include custom preamble as system message if selected
+      const messagesPayload: any[] = [];
+      
+      if (selectedPreamble === 'custom' && customPreambleContent) {
+        // User has custom preamble - add as system message
+        messagesPayload.push({ role: 'system', content: customPreambleContent });
+      }
+      
+      // Add user message
+      messagesPayload.push({ role: 'user', content: currentInput });
+
       // Call OpenAI-compatible RAG-enhanced chat API with streaming
       const response = await fetch('/v1/chat/completions', {
         method: 'POST',
@@ -222,10 +589,9 @@ export function Portal() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [
-            { role: 'user', content: currentInput }
-          ],
+          messages: messagesPayload,
           model: selectedModel,
+          preamble: selectedPreamble === 'custom' ? undefined : selectedPreamble, // Only send preamble name if not custom
           stream: true,
         }),
       });
@@ -345,21 +711,73 @@ export function Portal() {
           </div>
         </div>
         <div className="flex items-center space-x-3">
-          {/* Model Selector */}
-          <div className="relative">
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="appearance-none pl-4 pr-10 py-2.5 bg-norse-rune hover:bg-valhalla-gold/20 border-2 border-norse-rune hover:border-valhalla-gold rounded-xl transition-all duration-300 text-gray-300 hover:text-valhalla-gold text-sm font-medium cursor-pointer h-11 focus:outline-none focus:border-valhalla-gold"
-              title="Select AI model"
+          {/* Model Selector with Default Save */}
+          <div className="flex items-center space-x-2">
+            <div className="relative">
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="appearance-none pl-4 pr-10 py-2.5 bg-norse-rune hover:bg-valhalla-gold/20 border-2 border-norse-rune hover:border-valhalla-gold rounded-xl transition-all duration-300 text-gray-300 hover:text-valhalla-gold text-sm font-medium cursor-pointer h-11 focus:outline-none focus:border-valhalla-gold"
+                title="Select AI model"
+                disabled={availableModels.length === 0}
+              >
+                {availableModels.length === 0 ? (
+                  <option>Loading...</option>
+                ) : (
+                  availableModels.map((model) => (
+                    <option key={model.id} value={model.id} className="bg-[#0a0e1a] text-gray-300">
+                      {model.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+            {availableModels.length > 0 && !isDefaultModel && (
+              <button
+                onClick={handleSaveDefaultModel}
+                className="px-3 py-2 bg-norse-rune/50 hover:bg-valhalla-gold/20 border border-norse-rune hover:border-valhalla-gold rounded-lg transition-all duration-300 text-xs text-gray-400 hover:text-valhalla-gold whitespace-nowrap h-11 flex items-center"
+                title="Click to save as default model"
+              >
+                Save Default
+              </button>
+            )}
+            {availableModels.length > 0 && isDefaultModel && (
+              <div className="px-3 py-2 bg-valhalla-gold/10 border border-valhalla-gold/30 rounded-lg text-xs text-valhalla-gold/70 whitespace-nowrap h-11 flex items-center">
+                ✓ Default
+              </div>
+            )}
+          </div>
+
+          {/* Chatmode/Preamble Selector */}
+          <div className="flex items-center space-x-2">
+            <div className="relative flex-1">
+              <select
+                value={selectedPreamble}
+                onChange={(e) => setSelectedPreamble(e.target.value)}
+                className="appearance-none w-full pl-4 pr-10 py-2.5 bg-norse-rune hover:bg-valhalla-gold/20 border-2 border-norse-rune hover:border-valhalla-gold rounded-xl transition-all duration-300 text-gray-300 hover:text-valhalla-gold text-sm font-medium cursor-pointer h-11 focus:outline-none focus:border-valhalla-gold"
+                title="Select chatmode (agent personality/behavior)"
+              >
+                {availablePreambles.map((preamble) => (
+                  <option key={preamble.name} value={preamble.name} className="bg-[#0a0e1a] text-gray-300">
+                    {preamble.displayName}
+                  </option>
+                ))}
+                {customPreambleContent && (
+                  <option value="custom" className="bg-[#0a0e1a] text-valhalla-gold">
+                    Custom
+                  </option>
+                )}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+            <button
+              onClick={handleOpenCustomPreambleModal}
+              className="flex items-center justify-center w-11 h-11 bg-norse-rune hover:bg-valhalla-gold/20 border-2 border-norse-rune hover:border-valhalla-gold rounded-xl transition-all duration-300 group"
+              title="Add custom preamble"
             >
-              {MODELS.map((model) => (
-                <option key={model.id} value={model.id} className="bg-[#0a0e1a] text-gray-300">
-                  {model.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <Plus className="w-5 h-5 text-gray-300 group-hover:text-valhalla-gold transition-colors" />
+            </button>
           </div>
 
           {/* New Chat Button - Only show when there are messages */}
@@ -738,6 +1156,63 @@ export function Portal() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Preamble Modal */}
+      {showCustomPreambleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#1a1f2e] border-2 border-valhalla-gold rounded-2xl p-6 max-w-2xl w-full mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-valhalla-gold">Custom Preamble</h2>
+              <button
+                onClick={handleCancelCustomPreamble}
+                className="text-gray-400 hover:text-valhalla-gold transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <p className="text-gray-300 mb-4 text-sm">
+              Paste your custom system prompt/preamble below. This will be used as the agent's instructions
+              when "Custom" mode is selected.
+            </p>
+
+            <textarea
+              value={customPreambleText}
+              onChange={(e) => setCustomPreambleText(e.target.value)}
+              placeholder="# My Custom Agent Instructions&#10;&#10;You are a specialized assistant that..."
+              className="w-full h-64 p-4 bg-[#0a0e1a] border-2 border-norse-rune rounded-xl text-gray-100 placeholder:text-gray-500 focus:outline-none focus:border-valhalla-gold resize-none font-mono text-sm"
+            />
+
+            <div className="flex items-center justify-between mt-6">
+              <div className="flex items-center space-x-2">
+                {customPreambleContent && (
+                  <button
+                    onClick={handleClearCustomPreamble}
+                    className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 border-2 border-red-800 hover:border-red-600 rounded-xl text-red-400 hover:text-red-300 text-sm font-medium transition-all"
+                  >
+                    Clear Saved
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleCancelCustomPreamble}
+                  className="px-6 py-2 bg-norse-rune hover:bg-gray-700 border-2 border-norse-rune hover:border-gray-600 rounded-xl text-gray-300 hover:text-gray-100 text-sm font-medium transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveCustomPreamble}
+                  disabled={!customPreambleText.trim()}
+                  className="px-6 py-2 bg-valhalla-gold hover:bg-yellow-500 border-2 border-valhalla-gold rounded-xl text-norse-night text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Save & Use
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

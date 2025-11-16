@@ -48,6 +48,7 @@ interface ChatCompletionRequest {
   messages: ChatMessage[];
   model?: string;
   stream?: boolean;
+  preamble?: string; // Chatmode/preamble name (e.g., 'mimir-v2', 'debug', 'research')
 }
 
 /**
@@ -65,28 +66,46 @@ const DEFAULT_CONFIG: ChatConfig = {
 };
 
 /**
- * Load Claudette-Auto preamble
+ * Get available preamble files
  */
-async function loadClaudetteAutoPreamble(): Promise<string> {
-  
-  const preamblePaths = [
-    path.join(process.cwd(), 'docs/agents/claudette-mimir-v2.md'),
-    path.join(__dirname, '../../docs/agents/claudette-mimir-v2.md'),
-  ];
-
-  for (const preamblePath of preamblePaths) {
-    try {
-      const content = await fs.readFile(preamblePath, 'utf-8');
-      console.log(`✅ Loaded Claudette-Auto preamble from ${preamblePath}`);
-      return content;
-    } catch (error) {
-      // Try next path
-    }
+async function getAvailablePreambles(): Promise<{ name: string; filename: string; displayName: string }[]> {
+  const preambleDir = '/app/docs/agents';
+  try {
+    const files = await fs.readdir(preambleDir);
+    const preambles = files
+      .filter(f => f.startsWith('claudette-') && f.endsWith('.md'))
+      .map(filename => {
+        const name = filename.replace('claudette-', '').replace('.md', '');
+        const displayName = name
+          .split('-')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+        return { name, filename, displayName };
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return preambles;
+  } catch (error) {
+    console.warn('⚠️  Could not read preambles directory:', error);
+    return [];
   }
+}
 
-  // Fallback preamble
-  console.warn('⚠️  Using fallback Claudette-Auto preamble');
-  return `# Claudette Agent v5.2.1
+/**
+ * Load preamble by name (e.g., 'mimir-v2', 'debug', 'research')
+ */
+async function loadPreamble(preambleName?: string): Promise<string> {
+  const defaultPreamble = 'mimir-v2';
+  const name = preambleName || defaultPreamble;
+  const preamblePath = `/app/docs/agents/claudette-${name}.md`;
+
+  try {
+    const content = await fs.readFile(preamblePath, 'utf-8');
+    console.log(`✅ Loaded preamble: ${name} from ${preamblePath}`);
+    return content;
+  } catch (error) {
+    console.warn(`⚠️  Could not load preamble: ${name}, using fallback`);
+    // Fallback preamble
+    return `# Claudette Agent v5.2.1
 
 You are an autonomous AI assistant that helps users accomplish their goals by:
 - Providing accurate, relevant information
@@ -95,6 +114,7 @@ You are an autonomous AI assistant that helps users accomplish their goals by:
 - Being concise, clear, and helpful
 
 Always prioritize user needs and provide practical solutions.`;
+  }
 }
 
 /**
@@ -105,9 +125,23 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
   const config = { ...DEFAULT_CONFIG };
   let claudettePreamble = '';
 
-  // Load preamble on startup
-  loadClaudetteAutoPreamble().then(preamble => {
+  // Load default preamble on startup
+  loadPreamble('mimir-v2').then(preamble => {
     claudettePreamble = preamble;
+  });
+
+  /**
+   * GET /api/preambles
+   * List available preambles/chatmodes
+   */
+  router.get('/api/preambles', async (req: any, res: any) => {
+    try {
+      const preambles = await getAvailablePreambles();
+      res.json({ preambles });
+    } catch (error: any) {
+      console.error('Error listing preambles:', error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   /**
@@ -117,20 +151,34 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
   router.post('/v1/chat/completions', async (req: any, res: any) => {
     try {
       const body: ChatCompletionRequest = req.body;
-      const { messages, stream = true } = body;
+      const { messages, stream = true, preamble } = body;
 
       if (!messages || messages.length === 0) {
         return res.status(400).json({ error: 'No messages provided' });
       }
 
-      // Get the latest user message
-      const userMessage = messages[messages.length - 1]?.content || '';
+      // Get the latest user message for RAG search
+      const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+      const userMessage = lastUserMessage?.content || '';
       
       if (!userMessage) {
         return res.status(400).json({ error: 'No user message found' });
       }
 
       console.log(`\n💬 Chat request: ${userMessage.substring(0, 100)}...`);
+      console.log(`📨 Incoming messages: ${messages.length} (${messages.map(m => m.role).join(', ')})`);
+
+      // Check if user already provided a system prompt
+      const hasSystemPrompt = messages.some(m => m.role === 'system');
+      
+      // Only load Claudette preamble if no system prompt provided
+      let activePreamble: string | null = null;
+      if (!hasSystemPrompt) {
+        console.log(`🎭 No system prompt provided, loading chatmode: ${preamble || 'mimir-v2'}`);
+        activePreamble = await loadPreamble(preamble);
+      } else {
+        console.log(`✅ Using system prompt from request`);
+      }
 
       // Get model from request or use default
       // Note: Do NOT split on '.' as gpt-4.1 is a version number, not a provider prefix
@@ -262,38 +310,54 @@ ${relevantContext}
         console.log('⚠️ No context to inject - relevantContext is empty');
       }
 
-      // Construct enriched prompt
-      const enrichedPrompt = `${claudettePreamble}
+      // Build message array - use incoming messages or construct new ones
+      let chatMessages: ChatMessage[];
+      
+      if (hasSystemPrompt) {
+        // User provided system prompt - use their messages as-is
+        chatMessages = [...messages];
+        
+        // If we have RAG context, inject it before the last user message
+        if (contextSection && relevantContext) {
+          const lastUserIdx = chatMessages.map(m => m.role).lastIndexOf('user');
+          if (lastUserIdx !== -1) {
+            chatMessages.splice(lastUserIdx, 0, {
+              role: 'user',
+              content: `## RELEVANT CONTEXT FROM KNOWLEDGE BASE\n\n${relevantContext}`
+            });
+          }
+        }
+      } else {
+        // No system prompt provided - construct messages with Claudette preamble
+        chatMessages = [
+          { role: 'system', content: activePreamble! }
+        ];
 
----
+        // Add context as separate user message if available
+        if (contextSection && relevantContext) {
+          chatMessages.push({
+            role: 'user',
+            content: `## RELEVANT CONTEXT FROM KNOWLEDGE BASE\n\n${relevantContext}`
+          });
+        }
 
-## USER REQUEST
+        // Add all user/assistant messages from request
+        chatMessages.push(...messages);
+      }
 
-<user_request>
-${userMessage}
-</user_request>
-${contextSection}
----
-
-Please address the user's request using the provided context and your capabilities.`;
-
-      console.log(`📋 Enriched prompt length: ${enrichedPrompt.length} characters`);
-      console.log(`📋 Context section included: ${contextSection.length > 0 ? 'YES' : 'NO'}`);
+      console.log(`📋 Final message structure: ${chatMessages.length} messages (${chatMessages.map(m => m.role).join(', ')})`);
+      console.log(`📋 Total content length: ${chatMessages.reduce((sum, m) => sum + m.content.length, 0)} characters`);
 
       // Send processing status
+      const backendUrl = config.llmBackend === 'ollama' ? config.ollamaApiUrl : config.copilotApiUrl;
       const backendName = config.llmBackend === 'ollama' ? 'Ollama' : 'Copilot API';
       if (stream) {
         res.write(`: 🤖 Processing with ${selectedModel} (${backendName})...\n\n`);
       }
 
-      // Call LLM
-      console.log(`🤖 Calling ${backendName} with model: ${selectedModel}`);
-      
-      if (config.llmBackend === 'ollama') {
-        await streamOllamaResponse(enrichedPrompt, selectedModel, res, stream, sendChunk);
-      } else {
-        await streamCopilotResponse(enrichedPrompt, selectedModel, res, stream, sendChunk);
-      }
+      // Call LLM (both providers use OpenAI-compatible format)
+      console.log(`🤖 Calling ${backendName} at ${backendUrl} with model: ${selectedModel}`);
+      await streamChatCompletion(chatMessages, selectedModel, backendUrl, res, stream, sendChunk, config.llmBackend === 'copilot');
 
       // Send completion status
       if (stream) {
@@ -459,27 +523,43 @@ Please address the user's request using the provided context and your capabiliti
 }
 
 /**
- * Stream response from Copilot API (OpenAI-compatible format)
+ * Unified streaming function for OpenAI-compatible chat completions
+ * Works with both Ollama and OpenAI/Copilot APIs
  */
-async function streamCopilotResponse(
-  prompt: string,
+async function streamChatCompletion(
+  messages: ChatMessage[],
   model: string,
+  baseUrl: string,
   res: any,
   stream: boolean,
-  sendChunk: (content: string, finish_reason: string | null) => void
+  sendChunk: (content: string, finish_reason: string | null) => void,
+  requiresAuth: boolean = false
 ) {
-  const config = DEFAULT_CONFIG;
-  const url = `${config.copilotApiUrl}/chat/completions`;
-  
+  // Construct the correct endpoint
+  // Ollama: baseUrl/v1/chat/completions or baseUrl/api/chat
+  // Copilot/OpenAI: baseUrl/chat/completions
+  let url = baseUrl;
+  if (baseUrl.includes('11434')) {
+    // Ollama - try v1 endpoint first (OpenAI-compatible)
+    url = `${baseUrl}/v1/chat/completions`;
+  } else if (!baseUrl.includes('/chat/completions')) {
+    url = `${baseUrl}/chat/completions`;
+  }
+
+  const headers: any = {
+    'Content-Type': 'application/json',
+  };
+
+  if (requiresAuth) {
+    headers['Authorization'] = 'Bearer sk-copilot-dummy';
+  }
+
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer sk-copilot-dummy',
-    },
+    headers,
     body: JSON.stringify({
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       stream: true,
       temperature: 0.7,
       max_tokens: 128000,
@@ -488,11 +568,11 @@ async function streamCopilotResponse(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Copilot API error: ${response.status} - ${errorText}`);
+    throw new Error(`Chat completion error (${url}): ${response.status} - ${errorText}`);
   }
 
   if (!response.body) {
-    throw new Error('No response body from Copilot API');
+    throw new Error('No response body from chat completion API');
   }
 
   // Stream SSE response in OpenAI-compatible format
@@ -518,76 +598,14 @@ async function streamCopilotResponse(
           if (content) {
             sendChunk(content, null);
           }
+          // Check for finish_reason
+          const finishReason = parsed.choices?.[0]?.finish_reason;
+          if (finishReason) {
+            sendChunk('', finishReason);
+          }
         } catch (e) {
           // Skip invalid JSON
         }
-      }
-    }
-  }
-}
-
-/**
- * Stream response from Ollama (converted to OpenAI-compatible format)
- */
-async function streamOllamaResponse(
-  prompt: string,
-  model: string,
-  res: any,
-  stream: boolean,
-  sendChunk: (content: string, finish_reason: string | null) => void
-) {
-  const config = DEFAULT_CONFIG;
-  const url = `${config.ollamaApiUrl}/api/chat`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      stream: true,
-      options: {
-        temperature: 0.7,
-        num_predict: 128000,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
-  }
-
-  if (!response.body) {
-    throw new Error('No response body from Ollama');
-  }
-
-  // Stream JSONL response, converting to OpenAI-compatible format
-  const reader = response.body;
-  let buffer = '';
-
-  for await (const chunk of reader as any) {
-    buffer += chunk.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
-      try {
-        const parsed = JSON.parse(line);
-        const content = parsed.message?.content;
-        if (content) {
-          sendChunk(content, null);
-        }
-        if (parsed.done) {
-          sendChunk('', 'stop');
-          break;
-        }
-      } catch (e) {
-        // Skip invalid JSON
       }
     }
   }
