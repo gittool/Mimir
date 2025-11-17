@@ -93,12 +93,10 @@ describe('Workflow Executor', () => {
           dependencies: [],
         },
       ];
-      const outputDir = '/tmp/exec-123';
       const executionId = 'exec-123';
 
       const results = await executeWorkflowFromJSON(
         uiTasks,
-        outputDir,
         executionId,
         mockGraphManager
       );
@@ -148,7 +146,7 @@ describe('Workflow Executor', () => {
       ];
       const executionId = 'exec-456';
 
-      await executeWorkflowFromJSON(uiTasks, '/tmp/exec-456', executionId, mockGraphManager);
+      await executeWorkflowFromJSON(uiTasks, executionId, mockGraphManager);
 
       const state = executionStates.get(executionId);
       expect(state).toBeDefined();
@@ -169,7 +167,7 @@ describe('Workflow Executor', () => {
       ];
       const executionId = 'exec-789';
 
-      await executeWorkflowFromJSON(uiTasks, '/tmp/exec-789', executionId, mockGraphManager);
+      await executeWorkflowFromJSON(uiTasks, executionId, mockGraphManager);
 
       // Verify SSE events were sent
       expect(sse.sendSSEEvent).toHaveBeenCalledWith(
@@ -218,7 +216,6 @@ describe('Workflow Executor', () => {
 
       const results = await executeWorkflowFromJSON(
         uiTasks,
-        '/tmp/exec-fail',
         executionId,
         mockGraphManager
       );
@@ -258,7 +255,6 @@ describe('Workflow Executor', () => {
 
       const results = await executeWorkflowFromJSON(
         uiTasks,
-        '/tmp/exec-stop',
         'exec-stop',
         mockGraphManager
       );
@@ -276,7 +272,7 @@ describe('Workflow Executor', () => {
         { id: 'task-3', title: 'Task 3', prompt: 'C', agentRoleDescription: 'Worker B', dependencies: [] },
       ];
 
-      await executeWorkflowFromJSON(uiTasks, '/tmp/exec-roles', 'exec-roles', mockGraphManager);
+      await executeWorkflowFromJSON(uiTasks, 'exec-roles', mockGraphManager);
 
       // Should generate 2 preambles (one for each unique role)
       expect(taskExecutor.generatePreamble).toHaveBeenCalledTimes(2);
@@ -295,7 +291,7 @@ describe('Workflow Executor', () => {
         },
       ];
 
-      await executeWorkflowFromJSON(uiTasks, '/tmp/exec-qc', 'exec-qc', mockGraphManager);
+      await executeWorkflowFromJSON(uiTasks, 'exec-qc', mockGraphManager);
 
       // Should generate both worker and QC preambles
       expect(taskExecutor.generatePreamble).toHaveBeenCalledWith(
@@ -321,7 +317,6 @@ describe('Workflow Executor', () => {
       // Start execution
       const executionPromise = executeWorkflowFromJSON(
         uiTasks,
-        '/tmp/exec-cancel',
         executionId,
         mockGraphManager
       );
@@ -348,7 +343,7 @@ describe('Workflow Executor', () => {
         { id: 'task-2', title: 'Task 2', prompt: 'B', agentRoleDescription: 'Worker', dependencies: [] },
       ];
 
-      await executeWorkflowFromJSON(uiTasks, '/tmp/exec-progress', 'exec-progress', mockGraphManager);
+      await executeWorkflowFromJSON(uiTasks, 'exec-progress', mockGraphManager);
 
       // Should update progress twice (once per task)
       expect(persistence.updateExecutionNodeProgress).toHaveBeenCalledTimes(2);
@@ -362,7 +357,7 @@ describe('Workflow Executor', () => {
       ];
       const executionId = 'exec-sse';
 
-      await executeWorkflowFromJSON(uiTasks, '/tmp/exec-sse', executionId, mockGraphManager);
+      await executeWorkflowFromJSON(uiTasks, executionId, mockGraphManager);
 
       // Fast-forward timers to trigger closeSSEConnections
       vi.advanceTimersByTime(1000);
@@ -385,7 +380,6 @@ describe('Workflow Executor', () => {
       // Should not throw - execution continues even if persistence fails
       const results = await executeWorkflowFromJSON(
         uiTasks,
-        '/tmp/exec-persist-fail',
         'exec-persist-fail',
         mockGraphManager
       );
@@ -412,7 +406,7 @@ describe('Workflow Executor', () => {
         },
       ];
 
-      await executeWorkflowFromJSON(uiTasks, '/tmp/exec-complex', 'exec-complex', mockGraphManager);
+      await executeWorkflowFromJSON(uiTasks, 'exec-complex', mockGraphManager);
 
       // Verify executeTask was called with properly formatted TaskDefinition
       expect(taskExecutor.executeTask).toHaveBeenCalledWith(
@@ -443,7 +437,7 @@ describe('Workflow Executor', () => {
         { id: 'task-1', title: 'Task', prompt: 'Test', agentRoleDescription: 'Worker', dependencies: [] },
       ];
 
-      await executeWorkflowFromJSON(uiTasks, '/tmp/exec-state', executionId, mockGraphManager);
+      await executeWorkflowFromJSON(uiTasks, executionId, mockGraphManager);
 
       const state = executionStates.get(executionId);
       expect(state).toBeDefined();

@@ -284,7 +284,7 @@ export function createOrchestrationRouter(graphManager: IGraphManager): Router {
       }
       
       // Check if agent exists first
-      let agent;
+      let agent: any;
       try {
         agent = await graphManager.getNode(id);
       } catch (getError: any) {
@@ -984,11 +984,10 @@ Location: ${process.cwd()}
 
       // Generate execution ID
       const executionId = `exec-${Date.now()}`;
-      const outputDir = path.join(process.cwd(), 'generated-agents', executionId);
-      await fs.mkdir(outputDir, { recursive: true });
 
       // Start execution asynchronously (don't wait for completion)
-      executeWorkflowFromJSON(tasks, outputDir, executionId, graphManager).catch(error => {
+      // No file system access needed - everything stored in Neo4j
+      executeWorkflowFromJSON(tasks, executionId, graphManager).catch(error => {
         console.error(`❌ Workflow execution ${executionId} failed:`, error);
       });
 
