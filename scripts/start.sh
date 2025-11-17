@@ -46,7 +46,7 @@ elif [ "$OS" = "Linux" ]; then
 elif [[ "$OS" =~ "MINGW" ]] || [[ "$OS" =~ "MSYS" ]] || [[ "$OS" =~ "CYGWIN" ]]; then
   # Windows (Git Bash/MSYS/Cygwin)
   echo -e "${GREEN}✓ Windows detected${NC}"
-  COMPOSE_FILE="docker-compose.win64.yml"
+  COMPOSE_FILE="docker-compose.amd64.yml"
 else
   echo -e "${YELLOW}⚠️  Unknown OS, using default docker-compose.yml${NC}"
 fi

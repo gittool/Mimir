@@ -5,8 +5,7 @@
  * Implementation created using TDD - all tests in testing/config/llm-config-loader.test.ts must pass
  */
 
-import fs from 'fs/promises';
-import path from 'path';
+// No file I/O needed - everything is dynamic from ENV + provider APIs
 
 export interface ModelConfig {
   name: string;
@@ -59,10 +58,9 @@ export interface LLMConfig {
 export class LLMConfigLoader {
   private static instance: LLMConfigLoader;
   private config: LLMConfig | null = null;
-  private configPath: string;
 
   private constructor() {
-    this.configPath = process.env.MIMIR_LLM_CONFIG || '.mimir/llm-config.json';
+    // No config file - everything is ENV-based
   }
 
   static getInstance(): LLMConfigLoader {
@@ -157,91 +155,294 @@ export class LLMConfigLoader {
       return this.config;
     }
 
+    // Build config dynamically from ENV variables
+    this.config = this.getDefaultConfig();
+    this.applyEnvironmentOverrides(this.config);
+    
+    // Query providers for available models (async population)
+    await this.discoverModels(this.config);
+    
+    return this.config;
+  }
+
+  /**
+   * Discover available models from provider API
+   */
+  private async discoverModels(config: LLMConfig): Promise<void> {
+    const defaultProvider = config.defaultProvider;
+    const providerConfig = config.providers[defaultProvider];
+    
+    if (!providerConfig) {
+      console.warn(`⚠️  Default provider '${defaultProvider}' not configured`);
+      return;
+    }
+
     try {
-      const configContent = await fs.readFile(this.configPath, 'utf-8');
-      const parsedConfig = JSON.parse(configContent);
-      
-      // Validate required fields
-      if (!parsedConfig.defaultProvider || !parsedConfig.providers) {
-        throw new Error('Invalid config: missing defaultProvider or providers');
+      if (defaultProvider === 'ollama') {
+        await this.discoverOllamaModels(providerConfig);
+      } else if (defaultProvider === 'copilot' || defaultProvider === 'openai') {
+        await this.discoverOpenAIModels(providerConfig, defaultProvider);
       }
-      
-      // Apply environment variable overrides (Docker-friendly)
-      this.applyEnvironmentOverrides(parsedConfig);
-      
-      this.config = parsedConfig;
-      return this.config!;
     } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        console.warn(`⚠️  LLM config not found at ${this.configPath}, using defaults`);
-        this.config = this.getDefaultConfig();
-        // Apply environment overrides to default config too
-        this.applyEnvironmentOverrides(this.config);
-        return this.config;
-      }
-      
-      // JSON parse error or validation error
-      console.warn(`⚠️  Error loading LLM config: ${error.message}, using defaults`);
-      this.config = this.getDefaultConfig();
-      // Apply environment overrides to default config too
-      this.applyEnvironmentOverrides(this.config);
-      return this.config;
+      console.warn(`⚠️  Failed to discover models from ${defaultProvider}: ${error.message}`);
+      console.warn(`   Falling back to default model configuration`);
     }
   }
 
+  /**
+   * Discover Ollama models via API
+   */
+  private async discoverOllamaModels(providerConfig: ProviderConfig): Promise<void> {
+    try {
+      const response = await fetch(`${providerConfig.baseUrl}/api/tags`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const models = data.models || [];
+      
+      // Build models dynamically from API response
+      providerConfig.models = {};
+      
+      for (const model of models) {
+        const modelName = model.name;
+        const sizeGB = model.size ? (model.size / (1024 * 1024 * 1024)).toFixed(1) : '?';
+        
+        // Get context window from ENV or use default
+        const contextWindow = this.getContextWindowFromEnvOrDefault(modelName);
+        
+        providerConfig.models[modelName] = {
+          name: modelName,
+          contextWindow,
+          description: `${model.details?.family || 'Unknown'} model (${sizeGB}GB)`,
+          recommendedFor: this.guessRecommendedFor(modelName),
+          config: {
+            numCtx: contextWindow,
+            temperature: 0.0,
+            numPredict: -1,
+          },
+          supportsTools: this.guessToolSupport(modelName),
+        };
+      }
+      
+      console.log(`✅ Discovered ${models.length} Ollama models`);
+    } catch (error: any) {
+      console.warn(`⚠️  Failed to query Ollama API: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Discover OpenAI/Copilot models via API
+   */
+  private async discoverOpenAIModels(providerConfig: ProviderConfig, provider: string): Promise<void> {
+    try {
+      const response = await fetch(`${providerConfig.baseUrl}/models`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const models = data.data || [];
+      
+      // Build models dynamically from API response
+      providerConfig.models = {};
+      
+      for (const model of models) {
+        const modelId = model.id;
+        
+        // Get context window from ENV or use default
+        const contextWindow = this.getContextWindowFromEnvOrDefault(modelId);
+        
+        providerConfig.models[modelId] = {
+          name: modelId,
+          contextWindow,
+          description: `${provider} model via API`,
+          recommendedFor: this.guessRecommendedForOpenAI(modelId),
+          config: {
+            temperature: 0.0,
+            maxTokens: -1,
+          },
+          supportsTools: true, // All OpenAI/Copilot models support tools
+        };
+      }
+      
+      console.log(`✅ Discovered ${models.length} ${provider} models`);
+    } catch (error: any) {
+      console.warn(`⚠️  Failed to query ${provider} API: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Get context window from ENV variable or use intelligent default
+   * ENV variable format: MIMIR_CONTEXT_WINDOW_<MODEL_NAME>=<tokens>
+   * Example: MIMIR_CONTEXT_WINDOW_GPT_4_1=128000
+   */
+  private getContextWindowFromEnvOrDefault(modelName: string): number {
+    // Normalize model name for ENV var lookup (replace special chars with underscore)
+    const envVarName = `MIMIR_CONTEXT_WINDOW_${modelName.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+    const envValue = process.env[envVarName];
+    
+    if (envValue) {
+      const parsed = parseInt(envValue, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        console.log(`🔧 Using ENV context window for ${modelName}: ${parsed.toLocaleString()} tokens`);
+        return parsed;
+      }
+    }
+    
+    // Global default from ENV
+    const globalDefault = process.env.MIMIR_DEFAULT_CONTEXT_WINDOW;
+    if (globalDefault) {
+      const parsed = parseInt(globalDefault, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    
+    // Use intelligent defaults based on model name patterns
+    const name = modelName.toLowerCase();
+    
+    // Premium models with large context
+    if (name.includes('gpt-4') || name.includes('claude') || name.includes('gemini')) {
+      return 128000; // 128k default for GPT-4 class models
+    }
+    
+    if (name.includes('o1') || name.includes('o3')) {
+      return 200000; // 200k for reasoning models
+    }
+    
+    // Open source large context models
+    if (name.includes('gemma2') || name.includes('qwen2.5') || name.includes('qwen3')) {
+      return 128000; // Modern open source models support large contexts
+    }
+    
+    // Medium context models
+    if (name.includes('llama3') || name.includes('llama-3')) {
+      return 8192;
+    }
+    
+    if (name.includes('deepseek')) {
+      return 16384;
+    }
+    
+    // Small/fast models
+    if (name.includes('tiny') || name.includes('mini') || name.includes('1.5b')) {
+      return 8192;
+    }
+    
+    // Default: 128k for modern models (err on the side of generosity)
+    return 128000;
+  }
+
+  /**
+   * Guess recommended agent types from model name
+   */
+  private guessRecommendedFor(modelName: string): string[] {
+    const name = modelName.toLowerCase();
+    
+    // Small/fast models for workers
+    if (name.includes('1.5b') || name.includes('tiny') || name.includes('mini')) {
+      return ['worker'];
+    }
+    
+    // Medium models for all agents
+    if (name.includes('7b') || name.includes('8b')) {
+      return ['pm', 'worker', 'qc'];
+    }
+    
+    // Large models for PM/QC
+    if (name.includes('13b') || name.includes('70b')) {
+      return ['pm', 'qc'];
+    }
+    
+    // Default: all agents
+    return ['pm', 'worker', 'qc'];
+  }
+
+  /**
+   * Guess recommended agent types from OpenAI model ID
+   */
+  private guessRecommendedForOpenAI(modelId: string): string[] {
+    const name = modelId.toLowerCase();
+    
+    if (name.includes('mini')) {
+      return ['worker'];
+    }
+    
+    if (name.includes('o1') || name.includes('o3') || name.includes('claude')) {
+      return ['pm', 'qc'];
+    }
+    
+    return ['pm', 'worker', 'qc'];
+  }
+
+  /**
+   * Guess tool support from model name
+   */
+  private guessToolSupport(modelName: string): boolean {
+    const name = modelName.toLowerCase();
+    
+    // Known models WITHOUT tool support
+    if (name.includes('tinyllama') || name.includes('phi')) {
+      return false;
+    }
+    
+    // Qwen, Llama 3+, DeepSeek, and most modern models support tools
+    if (name.includes('qwen') || name.includes('llama3') || name.includes('deepseek')) {
+      return true;
+    }
+    
+    // Default: assume yes for modern models
+    return true;
+  }
+
   private getDefaultConfig(): LLMConfig {
+    // Get provider from ENV with fallback
+    const defaultProvider = (process.env.MIMIR_DEFAULT_PROVIDER || 'copilot') as string;
+    const defaultModel = process.env.MIMIR_DEFAULT_MODEL || 'gpt-4.1';
+    
     const config: LLMConfig = {
-      defaultProvider: 'ollama',
+      defaultProvider,
       providers: {
         copilot: {
           baseUrl: process.env.COPILOT_BASE_URL || 'http://localhost:4141/v1',
-          defaultModel: 'gpt-4.1',
-          models: {
-            'gpt-4.1': {
-              name: 'gpt-4.1',
-              contextWindow: 128000,
-              description: 'GitHub Copilot GPT-4 model via copilot-api proxy',
-              recommendedFor: ['pm', 'worker', 'qc'],
-              config: {
-                temperature: 0.0,
-              },
-            },
-          },
+          defaultModel: defaultModel, // Use unified default
+          models: {}, // Will be populated by discoverModels
         },
         ollama: {
           baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
-          defaultModel: 'gpt-oss',
-          models: {
-            'gpt-oss': {
-              name: 'gpt-oss',
-              contextWindow: 32768,
-              description: 'Open-source GPT model (13B params), good balance of quality and speed',
-              recommendedFor: ['pm', 'worker', 'qc'],
-              config: {
-                numCtx: 32768,
-                temperature: 0.0,
-                numPredict: -1,
-              },
-            },
-            tinyllama: {
-              name: 'tinyllama',
-              contextWindow: 8192,
-              description: '1.1B params, very fast inference (backup/testing only)',
-              recommendedFor: ['testing'],
-              config: {
-                numCtx: 8192,
-                temperature: 0.0,
-                numPredict: -1,
-              },
-            },
-          },
+          defaultModel: defaultModel, // Use unified default
+          models: {}, // Will be populated by discoverModels
+        },
+        openai: {
+          baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+          defaultModel: defaultModel, // Use unified default
+          models: {}, // Will be populated by discoverModels
+        },
+      },
+      // Agent defaults from ENV (all use default provider)
+      agentDefaults: {
+        pm: {
+          provider: defaultProvider,
+          model: process.env.MIMIR_PM_MODEL || defaultModel,
+          rationale: 'PM agent for planning and task breakdown',
+        },
+        worker: {
+          provider: defaultProvider,
+          model: process.env.MIMIR_WORKER_MODEL || defaultModel,
+          rationale: 'Worker agent for task execution',
+        },
+        qc: {
+          provider: defaultProvider,
+          model: process.env.MIMIR_QC_MODEL || defaultModel,
+          rationale: 'QC agent for verification',
         },
       },
     };
 
-    // Apply environment overrides (including embeddings config)
-    this.applyEnvironmentOverrides(config);
-    
     return config;
   }
 
@@ -253,10 +454,29 @@ export class LLMConfigLoader {
       throw new Error(`Provider '${provider}' not found in config`);
     }
 
-    const modelConfig = providerConfig.models[model];
+    let modelConfig = providerConfig.models[model];
+    
+    // If model not found, it may be newly available - refresh and retry
+    if (!modelConfig) {
+      console.log(`🔄 Model '${model}' not cached, refreshing from provider...`);
+      this.config = null; // Force refresh
+      const refreshedConfig = await this.load();
+      modelConfig = refreshedConfig.providers[provider]?.models[model];
+    }
     
     if (!modelConfig) {
-      throw new Error(`Model '${model}' not found for provider '${provider}'`);
+      console.warn(`⚠️  Model '${model}' not found for provider '${provider}', using defaults`);
+      // Return a sensible default instead of throwing
+      return {
+        name: model,
+        contextWindow: 8192,
+        description: `Unknown model: ${model}`,
+        recommendedFor: ['pm', 'worker', 'qc'],
+        config: {
+          temperature: 0.0,
+        },
+        supportsTools: true,
+      };
     }
 
     return modelConfig;

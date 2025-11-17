@@ -6,16 +6,19 @@ import {
   HumanMessage,
   AIMessage,
   ToolMessage,
+  trimMessages,
 } from "@langchain/core/messages";
 import type { CompiledStateGraph } from "@langchain/langgraph";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
 import fs from "fs/promises";
 import { CopilotModel, LLMProvider } from "./types.js";
-import { allTools, planningTools, getToolNames } from "./tools.js";
+import { consolidatedTools, planningTools, getToolNames } from "./tools.js";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { LLMConfigLoader } from "../config/LLMConfigLoader.js";
 import { RateLimitQueue } from "./rate-limit-queue.js";
+import { ConversationHistoryManager } from "./ConversationHistoryManager.js";
+import neo4j, { Driver } from "neo4j-driver";
 import { loadRateLimitConfig } from "../config/rate-limit-config.js";
 
 // Dummy API key for copilot-api proxy (required by LangChain OpenAI client but not used)
@@ -63,6 +66,8 @@ export class CopilotAgentClient {
   private systemPrompt: string = "";
   private maxIterations: number = 50; // Prevent infinite loops
   private tools: StructuredToolInterface[];
+  private maxMessagesInHistory: number = 20; // Keep only last N messages to prevent token overflow
+  private maxCompletionTokens: number = 4096; // Reduced from default 16384 to save context space
 
   // Provider abstraction fields (NEW)
   private provider: LLMProvider = LLMProvider.OLLAMA; // Default
@@ -75,9 +80,13 @@ export class CopilotAgentClient {
   // Rate limiter (NEW) - initialized lazily after provider is determined
   private rateLimiter: RateLimitQueue | null = null;
 
+  // Conversation history with embeddings + retrieval (Option 4)
+  private conversationHistory: ConversationHistoryManager | null = null;
+  private neo4jDriver: Driver | null = null;
+
   constructor(config: AgentConfig) {
-    // Use custom tools if provided, otherwise default to allTools
-    this.tools = config.tools || allTools;
+    // Use custom tools if provided, otherwise default to consolidatedTools
+    this.tools = config.tools || consolidatedTools;
 
     // Store config for lazy initialization in loadPreamble
     this.agentConfig = config;
@@ -231,12 +240,6 @@ export class CopilotAgentClient {
     console.log(
       `🔍 System prompt length: ${this.systemPrompt.length} chars`
     );    
-    console.log(
-      `🔍 System prompt:
-      ================================================================================
-      ${this.systemPrompt} 
-      ================================================================================`
-    );
 
     // Check if tools are disabled (empty array = no agent mode)
     if (this.tools.length === 0) {
@@ -250,22 +253,48 @@ export class CopilotAgentClient {
       return;
     }
 
-    // Create React agent using the LangGraph API
-    // NOTE: Message trimming must be handled at the invoke() level, not here
-    // stateModifier breaks LangChain's internal API with trimMessages
-    this.agent = createReactAgent({
-      llm: this.llm,
-      tools: this.tools,
-      prompt: new SystemMessage(this.systemPrompt),
-    });
+    // ✅ FIX: Do NOT create agent here - will be created fresh per request
+    // LangGraph agents maintain internal state that accumulates across invocations
+    // Creating fresh agent per request prevents unbounded context accumulation
+    this.agent = null; // Signal that we'll use tool mode with fresh agent
 
     const ctxWindow = await this.getContextWindow();
     console.log(
-      "✅ Agent initialized with tool-calling enabled using LangGraph"
+      "✅ Agent mode enabled (tools available) - will create fresh agent per request"
     );
     console.log(
-      `📊 Context: ${ctxWindow.toLocaleString()} tokens, Recursion limit: dynamic (10x tool calls)`
+      `📊 Context: ${ctxWindow.toLocaleString()} tokens`
     );
+  }
+
+  /**
+   * Initialize conversation history manager with Neo4j
+   * Call this to enable vector-based conversation persistence
+   */
+  async initializeConversationHistory(): Promise<void> {
+    if (this.conversationHistory) {
+      return; // Already initialized
+    }
+
+    try {
+      // Get Neo4j connection from environment or use defaults
+      const neo4jUri = process.env.NEO4J_URI || 'bolt://localhost:7687';
+      const neo4jUser = process.env.NEO4J_USER || 'neo4j';
+      const neo4jPassword = process.env.NEO4J_PASSWORD || 'password';
+
+      this.neo4jDriver = neo4j.driver(
+        neo4jUri,
+        neo4j.auth.basic(neo4jUser, neo4jPassword)
+      );
+
+      this.conversationHistory = new ConversationHistoryManager(this.neo4jDriver);
+      await this.conversationHistory.initialize();
+
+      console.log('✅ Conversation history with embeddings + retrieval initialized');
+    } catch (error: any) {
+      console.warn('⚠️  Failed to initialize conversation history:', error.message);
+      console.warn('   Conversation persistence will be disabled');
+    }
   }
 
   private async initializeLLM(): Promise<void> {
@@ -472,7 +501,7 @@ export class CopilotAgentClient {
 
     console.log(`🔍 Initializing OpenAI client with copilot-api proxy: ${this.baseURL}`);
     console.log(
-      `🔍 Model: ${model}, maxTokens: ${this.llmConfig.maxTokens}, temperature: ${this.llmConfig.temperature}`
+      `🔍 Model: ${model}, maxTokens: ${this.maxCompletionTokens} (reduced to prevent overflow), temperature: ${this.llmConfig.temperature}`
     );
 
     this.llm = new ChatOpenAI({
@@ -482,7 +511,7 @@ export class CopilotAgentClient {
         baseURL: this.baseURL,
       },
       temperature: this.llmConfig.temperature,
-      maxTokens: this.llmConfig.maxTokens,
+      maxTokens: this.maxCompletionTokens, // Use reduced token limit (4096) to prevent overflow
       streaming: false,
       timeout: 120000, // 2 minute timeout for long-running requests
     });
@@ -583,7 +612,8 @@ CONCISE SUMMARY:`;
   async execute(
     task: string,
     retryCount: number = 0,
-    circuitBreakerLimit?: number // Optional: PM's estimate × 1.5
+    circuitBreakerLimit?: number, // Optional: PM's estimate × 1.5
+    sessionId?: string // Optional: Enable conversation persistence with embeddings + retrieval
   ): Promise<{
     output: string;
     conversationHistory: Array<{ role: string; content: string }>;
@@ -620,7 +650,8 @@ CONCISE SUMMARY:`;
       const result = await this.executeInternal(
         task,
         retryCount,
-        circuitBreakerLimit
+        circuitBreakerLimit,
+        sessionId
       );
 
       // Record actual API usage after execution
@@ -636,7 +667,8 @@ CONCISE SUMMARY:`;
   private async executeInternal(
     task: string,
     retryCount: number = 0,
-    circuitBreakerLimit?: number // Optional: PM's estimate × 1.5, defaults to 50
+    circuitBreakerLimit?: number, // Optional: PM's estimate × 1.5, defaults to 50
+    sessionId?: string // Optional: session ID for conversation persistence
   ): Promise<{
     output: string;
     conversationHistory: Array<{ role: string; content: string }>;
@@ -665,11 +697,33 @@ CONCISE SUMMARY:`;
 
     const startTime = Date.now();
 
+    // Build messages with conversation history if sessionId provided
+    let messagesWithHistory: BaseMessage[] | null = null;
+    if (sessionId && this.conversationHistory) {
+      console.log(`🧠 Building conversation context with embeddings + retrieval (session: ${sessionId})...`);
+      try {
+        messagesWithHistory = await this.conversationHistory.buildConversationContext(
+          sessionId,
+          this.systemPrompt,
+          task
+        );
+        console.log(`✅ Retrieved conversation context: ${messagesWithHistory.length} messages`);
+        
+        // Log stats if available
+        const stats = await this.conversationHistory.getSessionStats(sessionId);
+        console.log(`📊 Session stats: ${stats.totalMessages} total messages (${stats.userMessages} user, ${stats.assistantMessages} assistant)`);
+      } catch (error: any) {
+        console.warn(`⚠️  Failed to build conversation context: ${error.message}`);
+        console.warn(`   Continuing without conversation history`);
+      }
+    }
+
     // Direct LLM mode (no agent/tools)
     if (!this.agent) {
       console.log("📤 Invoking LLM directly (no tool calling)...");
 
-      const messages = [
+      // Use conversation history if available, otherwise use simple messages
+      const messages = messagesWithHistory || [
         new SystemMessage(this.systemPrompt),
         new HumanMessage(task),
       ];
@@ -732,6 +786,20 @@ CONCISE SUMMARY:`;
         };
       }
 
+      // Store conversation turn if sessionId provided
+      if (sessionId && this.conversationHistory) {
+        try {
+          await this.conversationHistory.storeConversationTurn(
+            sessionId,
+            task,
+            output
+          );
+          console.log(`💾 Stored conversation turn to session ${sessionId}`);
+        } catch (error: any) {
+          console.warn(`⚠️  Failed to store conversation: ${error.message}`);
+        }
+      }
+
       return {
         output,
         toolCalls: 0,
@@ -766,8 +834,6 @@ CONCISE SUMMARY:`;
       // Use PM's estimate (×10) if provided, otherwise default to 100
       const MAX_TOOL_CALLS = circuitBreakerLimit || 100;
       const MAX_MESSAGES = MAX_TOOL_CALLS * 10; // ~10 messages per tool call (generous buffer)
-      let toolCallsSoFar = 0;
-      let lastMessageCount = 0;
 
       console.log(
         `🔒 Circuit breaker limit: ${MAX_TOOL_CALLS} tool calls (${
@@ -775,16 +841,53 @@ CONCISE SUMMARY:`;
         })`
       );
 
-      // LangGraph agents use messages format
-      const result = await this.agent.invoke(
+      // Calculate token budget (context window - function schemas - completion reserve - safety margin)
+      const contextWindow = await this.getContextWindow();
+      const functionTokens = 2214; // Measured: 14 tools = ~2214 tokens
+      const completionReserve = this.maxCompletionTokens;
+      const safetyMargin = 2000; // Buffer for system prompt and formatting
+      const maxMessageTokens = contextWindow - functionTokens - completionReserve - safetyMargin;
+      
+      console.log(`📊 Token budget: ${maxMessageTokens.toLocaleString()} for messages (${contextWindow.toLocaleString()} total - ${functionTokens} tools - ${completionReserve} completion - ${safetyMargin} margin)`);
+
+      // ✅ PROPER FIX: Create fresh agent for each request (LangGraph 1.0 best practice)
+      // Per LangGraph documentation: Agents are STATELESS by default (no checkpointer = no persistence)
+      // Creating a fresh agent per request prevents LangGraph's internal state accumulation
+      // This is the industry-standard pattern for stateless agents
+      console.log(`🔄 Creating fresh agent for this request (stateless mode)...`);
+      const freshAgent = createReactAgent({
+        llm: this.llm,
+        tools: this.tools,
+        prompt: new SystemMessage(this.systemPrompt),
+      });
+      
+      // Pass conversation history if available, otherwise just the current task
+      // LangGraph will manage tool call loops internally
+      let initialMessages: BaseMessage[];
+      if (messagesWithHistory) {
+        // Remove system message from history (already in agent prompt)
+        initialMessages = messagesWithHistory.filter(m => m._getType() !== 'system');
+        console.log(`📝 Using ${initialMessages.length} messages from conversation history`);
+      } else {
+        initialMessages = [new HumanMessage(task)];
+      }
+      
+      console.log(`🔧 Agent initialized with ${this.tools.length} tools: ${this.tools.map(t => t.name).join(', ')}`);
+      
+      const result = await freshAgent.invoke(
         {
-          messages: [new HumanMessage(task)],
+          messages: initialMessages,
         },
         {
           recursionLimit: MAX_MESSAGES, // Generous limit to prevent premature cutoff
         }
       );
       console.log("📥 Agent invocation complete");
+      
+      // Debug: Log tool calls
+      const resultMessages = result.messages || [];
+      const detectedToolCalls = resultMessages.filter((m: any) => m._getType() === 'tool');
+      console.log(`🔍 Debug: ${detectedToolCalls.length} tool calls detected in response`);
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
       console.log(`\n✅ Agent completed in ${duration}s\n`);
@@ -792,6 +895,10 @@ CONCISE SUMMARY:`;
       // Debug: Log what we actually got
       console.log("📦 Result keys:", Object.keys(result));
       console.log("📦 Result type:", typeof result);
+      
+      // Log message count before trimming
+      const messagesBeforeTrim = (result as any).messages?.length || 0;
+      console.log(`📨 Messages in result: ${messagesBeforeTrim}`);
 
       // Extract the final message from LangGraph result
       const messages = (result as any).messages || [];
@@ -880,6 +987,20 @@ CONCISE SUMMARY:`;
         messageCount > messageLimit ||
         estimatedContext > 80000;
 
+      // Store conversation turn if sessionId provided
+      if (sessionId && this.conversationHistory) {
+        try {
+          await this.conversationHistory.storeConversationTurn(
+            sessionId,
+            task,
+            output
+          );
+          console.log(`💾 Stored conversation turn to session ${sessionId}`);
+        } catch (error: any) {
+          console.warn(`⚠️  Failed to store conversation: ${error.message}`);
+        }
+      }
+
       return {
         output,
         conversationHistory,
@@ -922,7 +1043,7 @@ CONCISE SUMMARY:`;
 
 **IMPORTANT**: If using tools, ensure JSON is valid. Keep tool arguments simple and well-formatted.`;
 
-        return await this.executeInternal(retryTask, retryCount + 1);
+        return await this.executeInternal(retryTask, retryCount + 1, circuitBreakerLimit, sessionId);
       }
 
       // If not a tool call error or max retries exceeded, provide helpful error message

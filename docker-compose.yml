@@ -166,7 +166,23 @@ services:
       - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://copilot-api:4141/v1}
       # - COPILOT_BASE_URL=${COPILOT_BASE_URL:-http://host.docker.internal:4141/v1}
       
-      # Feature Flags (override .mimir/llm-config.json)
+      # Provider and Model Configuration (100% dynamic - no config file needed)
+      - MIMIR_DEFAULT_PROVIDER=${MIMIR_DEFAULT_PROVIDER:-copilot}
+      - MIMIR_DEFAULT_MODEL=${MIMIR_DEFAULT_MODEL:-gpt-4.1}
+      
+      # Per-Agent Model Configuration (optional overrides)
+      - MIMIR_PM_MODEL=${MIMIR_PM_MODEL:-}
+      - MIMIR_WORKER_MODEL=${MIMIR_WORKER_MODEL:-}
+      - MIMIR_QC_MODEL=${MIMIR_QC_MODEL:-}
+      
+      # Context Window Configuration (optional - system queries provider APIs dynamically)
+      # Global default context window for all models (if not set, defaults to 128k)
+      - MIMIR_DEFAULT_CONTEXT_WINDOW=${MIMIR_DEFAULT_CONTEXT_WINDOW:-128000}
+      # Per-model overrides (example format - replace dots/dashes with underscores)
+      # - MIMIR_CONTEXT_WINDOW_GPT_4_1=128000
+      # - MIMIR_CONTEXT_WINDOW_QWEN2_5_CODER_7B=32768
+      
+      # Feature Flags (no longer reads from llm-config.json)
       - MIMIR_FEATURE_PM_MODEL_SUGGESTIONS=${MIMIR_FEATURE_PM_MODEL_SUGGESTIONS:-false}
       - MIMIR_FEATURE_VECTOR_EMBEDDINGS=${MIMIR_FEATURE_VECTOR_EMBEDDINGS:-true}
       

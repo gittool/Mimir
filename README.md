@@ -1,4 +1,4 @@
-<img width="283" height="380" alt="image" src="https://github.com/user-attachments/assets/f4e3be80-79fe-4e10-b010-9a39b5f70584" />
+﻿<img width="283" height="380" alt="image" src="https://github.com/user-attachments/assets/f4e3be80-79fe-4e10-b010-9a39b5f70584" />
 
 # M.I.M.I.R - Multi-agent Intelligent Memory & Insight Repository 
 
@@ -137,32 +137,89 @@ NEO4J_PASSWORD=password          # Change in production!
 HOST_WORKSPACE_ROOT=~/src        # Your main workspace area
 ```
 
+#### LLM Configuration (For Chat API & RAG)
+
+The Chat API supports **any OpenAI-compatible LLM endpoint** with a unified configuration:
+
+```bash
+# Provider Selection (required)
+# Aliases: 'openai'/'copilot' (OpenAI-compatible) or 'ollama'/'llama.cpp' (local LLM)
+LLM_PROVIDER=openai
+
+# API Endpoint (required)
+LLM_API_URL=http://copilot-api:4141/v1
+
+# Model Selection (optional - defaults to provider's best)
+# Available models are fetched dynamically from the LLM_API_URL endpoint
+DEFAULT_MODEL=gpt-4.1          # For OpenAI-compatible providers
+# DEFAULT_MODEL=qwen2.5-coder  # For Ollama
+
+# Embedding Model (optional - default: nomic-embed-text)
+EMBEDDING_MODEL=nomic-embed-text
+```
+
+**Provider Aliases:**
+- `openai`, `copilot`: OpenAI-compatible endpoints (GitHub Copilot or OpenAI API)
+- `ollama`, `llama.cpp`: Local LLM providers (Ollama or llama.cpp - interchangeable)
+
+**Configuration Examples:**
+
+- **Copilot API** (GitHub Copilot license, recommended for development):
+  ```bash
+  LLM_PROVIDER=openai           # or 'copilot' (same thing)
+  LLM_API_URL=http://copilot-api:4141/v1
+  DEFAULT_MODEL=gpt-4.1
+  ```
+
+- **Local Ollama** (offline, fully local):
+  ```bash
+  LLM_PROVIDER=ollama           # or 'llama.cpp' (interchangeable)
+  LLM_API_URL=http://ollama:11434/v1
+  DEFAULT_MODEL=qwen2.5-coder
+  ```
+
+- **OpenAI API** (cloud-based, requires API key):
+  ```bash
+  LLM_PROVIDER=openai
+  LLM_API_URL=https://api.openai.com/v1
+  DEFAULT_MODEL=gpt-4.1
+  OPENAI_API_KEY=sk-...
+  ```
+
+**Available Models (Dynamic):**
+
+Models are **fetched dynamically** from your configured LLM provider at runtime. To see available models:
+
+```bash
+# Query Mimir's models endpoint
+curl http://localhost:9042/api/models
+
+# Or query your LLM provider directly
+curl http://copilot-api:4141/v1/models
+```
+
+All models from the LLM provider's `/v1/models` endpoint are automatically available - no hardcoded list!
+
+**Switching Providers:** Change `LLM_PROVIDER` and `LLM_API_URL` in `.env`, then restart:
+```bash
+docker compose restart mimir-server
+```
+Existing conversations remain unchanged - the new provider is used for subsequent messages.
+
 #### Embeddings (Optional - for semantic search)
 
 ```bash
 # Enable vector embeddings for AI semantic search
 MIMIR_EMBEDDINGS_ENABLED=true
 MIMIR_FEATURE_VECTOR_EMBEDDINGS=true
-
-# Embeddings Provider: "ollama" (recommended) or "copilot" (experimental)
-MIMIR_EMBEDDINGS_PROVIDER=ollama
-
-# Model Selection
-# MIMIR_EMBEDDINGS_MODEL=text-embedding-3-small  # For copilot
-MIMIR_EMBEDDINGS_MODEL=nomic-embed-text       # For ollama
 ```
 
-**Ollama provider** (recommended):
-- ✅ Fully offline
-- ✅ No external dependencies
-- ⚠️ Requires GPU for good performance
-- ⚠️ May have TLS/certificate issues in corporate networks
+Embeddings use the same `LLM_API_URL` and `EMBEDDING_MODEL` from the LLM Configuration above. No separate configuration needed.
 
-**Copilot provider** (experimental):
-- ✅ No local GPU required
-- ✅ Faster processing
-- ✅ Works behind corporate proxies
-- ⚠️ Requires GitHub Copilot subscription
+**Supported Embedding Models:**
+- `nomic-embed-text` (default - lightweight, 768 dims)
+- `mxbai-embed-large` (higher quality, 1024 dims)
+- `text-embedding-3-small` (OpenAI, 1536 dims - requires OpenAI LLM provider)
 
 #### Advanced Settings (Optional)
 
@@ -194,20 +251,22 @@ To disable auto-indexing, set in `.env`:
 MIMIR_AUTO_INDEX_DOCS=false
 ```
 
-See `env.example` or `docker-compose.yml` for complete list of configuration options.
+See `.env.example` or `docker-compose.yml` for complete list of configuration options.
 
 ### Optional Services
 
 By default, only the core services run (Mimir Server, Neo4j, Copilot API). You can enable additional services by uncommenting them in `docker-compose.yml`:
 
-#### Enable Ollama (Local LLM Embeddings)
+#### Enable Ollama (Local LLM Provider)
 
-**Why enable?** Run embeddings completely offline, no external dependencies.
+**Why enable?** Run LLMs completely offline, no external dependencies. Use as your `LLM_PROVIDER` for the Chat API.
 
 ```bash
 # 1. Edit docker-compose.yml - uncomment the ollama service
-# 2. Update Mimir server environment:
-OLLAMA_BASE_URL=http://ollama:11434
+# 2. Update .env file:
+LLM_PROVIDER=ollama
+LLM_API_URL=http://ollama:11434/v1
+DEFAULT_MODEL=qwen2.5-coder
 
 # 3. Restart services
 docker compose up -d
@@ -219,7 +278,7 @@ If you already have Ollama running on your host or another machine:
 
 ```bash
 # In .env file:
-OLLAMA_BASE_URL=http://192.168.1.100:11434  # Your Ollama server IP
+LLM_API_URL=http://192.168.1.100:11434/v1  # Your Ollama server
 
 # Restart Mimir
 docker compose restart mimir-server
@@ -562,6 +621,136 @@ curl -X POST http://localhost:9042/api/chat \
   }'
 ```
 
+### Chat API with MCP Tools & RAG
+
+The Chat API (`/api/chat`) provides OpenAI-compatible chat completions with **built-in MCP tool support** and **Retrieval-Augmented Generation (RAG)**.
+
+#### Features
+- **Full MCP Tool Support**: Access all 13 Mimir tools (memory, file indexing, semantic search, todos)
+- **Semantic Search**: Automatically retrieves relevant context from indexed files
+- **Conversation Memory**: Persists conversations with thread IDs
+- **Multi-Provider LLM Support**: Switch between Ollama, OpenAI, copilot-api with one config
+
+#### LLM Configuration
+
+The Chat API uses a **unified LLM configuration** - switch providers by changing environment variables only:
+
+```bash
+# Provider Selection (required)
+LLM_PROVIDER=openai           # or 'ollama'
+
+# API Endpoint (required)
+LLM_API_URL=http://copilot-api:4141/v1
+
+# Model Selection (optional - defaults to provider's best model)
+DEFAULT_MODEL=gpt-4.1          # For OpenAI-compatible providers
+# DEFAULT_MODEL=qwen2.5-coder  # For Ollama
+
+# Embedding Model (optional - default: nomic-embed-text)
+EMBEDDING_MODEL=nomic-embed-text
+```
+
+#### Provider Examples
+
+**Using Copilot API** (GitHub Copilot license - recommended for development)
+```bash
+LLM_PROVIDER=openai
+LLM_API_URL=http://copilot-api:4141/v1
+DEFAULT_MODEL=gpt-4.1
+EMBEDDING_MODEL=nomic-embed-text
+```
+
+**Using Local Ollama**
+```bash
+LLM_PROVIDER=ollama
+LLM_API_URL=http://ollama:11434/v1
+DEFAULT_MODEL=qwen2.5-coder
+EMBEDDING_MODEL=nomic-embed-text
+```
+
+**Using OpenAI API**
+```bash
+LLM_PROVIDER=openai
+LLM_API_URL=https://api.openai.com/v1
+DEFAULT_MODEL=gpt-4.1
+# Note: Requires OPENAI_API_KEY environment variable
+```
+
+#### Chat API Request Format
+
+```bash
+POST /api/chat
+Content-Type: application/json
+
+{
+  "message": "Create a TODO and index my project",
+  "conversationId": "my-session-123",
+  "enable_tools": true,           # Enable MCP tool access (default: true)
+  "enable_rag": true,             # Enable semantic search context (default: true)
+  "system_prompt": "You are a helpful AI assistant..."  # Optional custom system prompt
+}
+```
+
+#### Request Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `message` | string | âœ… | - | The user's message |
+| `conversationId` | string | ✅ | new UUID | Conversation thread identifier |
+| `enable_tools` | boolean | ✅ | true | Enable MCP tools (memory, todos, semantic search) |
+| `enable_rag` | boolean | ✅ | true | Enable Retrieval-Augmented Generation |
+| `system_prompt` | string | ✅ | default | Custom system prompt for this conversation |
+
+#### Response Format (Streaming)
+
+```json
+{
+  "type": "message",
+  "content": "I've created a TODO and indexed your project...",
+  "conversationId": "my-session-123",
+  "toolCalls": [
+    {
+      "tool": "todo",
+      "operation": "create",
+      "result": "todo-456"
+    },
+    {
+      "tool": "index_folder",
+      "path": "/workspace/my-project",
+      "result": "âœ“ Indexed 127 files"
+    }
+  ]
+}
+```
+
+#### Switching Providers at Runtime
+
+To switch providers, update `.env` and restart:
+
+```bash
+# Switch from copilot-api to Ollama
+LLM_PROVIDER=ollama
+LLM_API_URL=http://ollama:11434/v1
+docker compose restart mimir-server
+```
+
+All existing conversations and chat history remain intact. The new provider is used for subsequent messages.
+
+#### Embedding Models
+
+The embedding model determines semantic search quality. **nomic-embed-text** is the default (lightweight, universal):
+
+| Model | Dimensions | Speed | Notes |
+|-------|-----------|-------|-------|
+| `nomic-embed-text` | 768 | Fast | **Default - recommended** |
+| `mxbai-embed-large` | 1024 | Fast | Higher quality, slightly slower |
+| `text-embedding-3-small` | 1536 | Fast | OpenAI-compatible, excellent quality |
+
+Change in `.env`:
+```bash
+EMBEDDING_MODEL=text-embedding-3-small  # For OpenAI providers
+```
+
 **3. Orchestration API** - For workflow execution
 ```bash
 # Execute a plan with multiple tasks
@@ -576,7 +765,7 @@ curl -X POST http://localhost:9042/api/orchestrate/execute \
   }'
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ### What's Running?
 
@@ -586,7 +775,7 @@ When you run `docker compose up -d`, you get these services:
 |---------|------|---------|-----|
 | **Mimir Server** | 9042 | Web UI + MCP API + Chat API | http://localhost:9042 |
 | **Neo4j** | 7474, 7687 | Graph database storage | http://localhost:7474 |
-| **Copilot API** | 4141 | AI model access (optional) | http://localhost:4141 |
+| **Copilot API** | 4141 | AI model access (OpenAI-compatible) | http://localhost:4141 |
 
 **Optional Services (commented out by default):**
 
@@ -595,7 +784,28 @@ When you run `docker compose up -d`, you get these services:
 | **Ollama** | 11434 | Local LLM embeddings | Uncomment in docker-compose.yml |
 | **Open-WebUI** | 3000 | Alternative chat UI | Uncomment in docker-compose.yml |
 
-> � **Embeddings**: For semantic search, you need embeddings. Options:
+> **Unified LLM Configuration**: The Chat API supports **any OpenAI-compatible endpoint**:
+> - **Copilot API** (GitHub Copilot license) - Default provider
+> - **Ollama** (local, offline)
+> - **OpenAI API** (cloud-based)
+> 
+> Switch providers by changing `LLM_PROVIDER` and `LLM_API_URL` in `.env`
+
+> **Embeddings**: Semantic search uses `EMBEDDING_MODEL` (default: `nomic-embed-text`):
+> - Set `LLM_API_URL` to match your LLM provider
+> - Embedding model must be available from the same endpoint
+> - No separate embeddings configuration needed
+
+> **Open-WebUI**: Optional alternative chat interface. Useful for testing Ollama models locally. To enable, uncomment the `open-webui` service in docker-compose.yml and restart.
+
+**Optional Services (commented out by default):**
+
+| Service | Port | Purpose | Enable With |
+|---------|------|---------|-------------|
+| **Ollama** | 11434 | Local LLM embeddings | Uncomment in docker-compose.yml |
+| **Open-WebUI** | 3000 | Alternative chat UI | Uncomment in docker-compose.yml |
+
+> ï¿½ **Embeddings**: For semantic search, you need embeddings. Options:
 > - Use external Ollama server (recommended - set `OLLAMA_BASE_URL` in .env)
 > - Enable built-in Ollama service (uncomment in docker-compose.yml)
 > - Use Copilot embeddings (experimental - set `MIMIR_EMBEDDINGS_PROVIDER=copilot`)
@@ -899,7 +1109,7 @@ curl http://localhost:7474        # Neo4j browser
 
 - **Neo4j data:** `./data/neo4j/`
 - **Logs:** `./logs/`
-- **Config:** `.env` and `.mimir/llm-config.json`
+- **Config:** `.env` (100% ENV-based, no config files needed)
 
 ## 🏆 Why Choose Mimir?
 

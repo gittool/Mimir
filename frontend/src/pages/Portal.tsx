@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, User, Paperclip, X, Image as ImageIcon, RotateCcw, ChevronDown, Plus, Edit2 } from 'lucide-react';
+import { Send, Sparkles, User, Paperclip, X, Image as ImageIcon, RotateCcw, ChevronDown, Plus, Edit2, Copy, Check, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { EyeOfMimir } from '../components/EyeOfMimir';
 import { OrchestrationStudioIcon } from '../components/OrchestrationStudioIcon';
@@ -10,6 +10,22 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 /**
+ * Represents a tool call during agent execution.
+ * 
+ * @interface ToolCall
+ * @property {string} name - Name of the tool being called
+ * @property {any} args - Arguments passed to the tool
+ * @property {string} [result] - Result returned from the tool (if completed)
+ * @property {'executing' | 'completed'} status - Current status of the tool call
+ */
+interface ToolCall {
+  name: string;
+  args: any;
+  result?: string;
+  status: 'executing' | 'completed';
+}
+
+/**
  * Represents a chat message in the conversation.
  * 
  * @interface Message
@@ -18,6 +34,7 @@ import remarkGfm from 'remark-gfm';
  * @property {string} content - The text content of the message
  * @property {Date} timestamp - When the message was created
  * @property {AttachedFile[]} [attachments] - Optional array of attached files
+ * @property {ToolCall[]} [toolCalls] - Tool calls made during this message (for assistant messages)
  * 
  * @example
  * ```typescript
@@ -46,6 +63,7 @@ interface Message {
   content: string;
   timestamp: Date;
   attachments?: AttachedFile[];
+  toolCalls?: ToolCall[];
 }
 
 /**
@@ -159,6 +177,8 @@ export function Portal() {
   const [customPreambleContent, setCustomPreambleContent] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
+  const [copiedConversation, setCopiedConversation] = useState(false);
+  const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -475,6 +495,46 @@ export function Portal() {
   };
 
   /**
+   * Copies the entire conversation to clipboard in plain text format.
+   * Shows visual feedback for 2 seconds after copying.
+   * 
+   * @function handleCopyConversation
+   * @returns {Promise<void>}
+   * 
+   * @example
+   * Output format:
+   * ```
+   * User: Hello, how are you?
+   * Assistant: I'm doing well, thank you for asking!
+   * User: Can you help me with coding?
+   * Assistant: Of course! I'd be happy to help...
+   * ```
+   */
+  const handleCopyConversation = async () => {
+    if (messages.length === 0) return;
+
+    try {
+      // Format conversation as plain text
+      const conversationText = messages
+        .map(msg => {
+          const role = msg.role === 'user' ? 'User' : 'Assistant';
+          return `${role}: ${msg.content}`;
+        })
+        .join('\n\n');
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(conversationText);
+      
+      // Show success feedback
+      setCopiedConversation(true);
+      setTimeout(() => setCopiedConversation(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy conversation:', error);
+      alert('Failed to copy conversation to clipboard');
+    }
+  };
+
+  /**
    * Saves edited message and re-sends conversation from that point.
    * Removes all messages after the edited one and re-submits.
    * 
@@ -544,6 +604,7 @@ export function Portal() {
           model: selectedModel,
           preamble: selectedPreamble === 'custom' ? undefined : selectedPreamble,
           stream: true,
+          enable_tools: true, // Explicitly enable tool calling
         }),
       });
 
@@ -560,6 +621,7 @@ export function Portal() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let assistantMessageContent = '';
+      const toolCalls: ToolCall[] = [];
       
       const assistantMessageId = (Date.now() + 1).toString();
       const assistantMessage: Message = {
@@ -567,6 +629,7 @@ export function Portal() {
         role: 'assistant',
         content: '',
         timestamp: new Date(),
+        toolCalls: [],
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -580,6 +643,37 @@ export function Portal() {
         
         for (const line of lines) {
           if (line.startsWith(':')) {
+            const status = line.slice(2).trim();
+            
+            // Check for tool execution messages
+            if (status.includes('Executing tool:') || status.includes('Tool:')) {
+              const toolMatch = status.match(/(?:Executing tool:|Tool:)\s*(\w+)/);
+              if (toolMatch) {
+                toolCalls.push({
+                  name: toolMatch[1],
+                  args: {},
+                  status: 'executing'
+                });
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, toolCalls: [...toolCalls] }
+                      : msg
+                  )
+                );
+              }
+            } else if (status.includes('Tool result:') || status.includes('completed')) {
+              if (toolCalls.length > 0) {
+                toolCalls[toolCalls.length - 1].status = 'completed';
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, toolCalls: [...toolCalls] }
+                      : msg
+                  )
+                );
+              }
+            }
             continue;
           }
           
@@ -589,6 +683,31 @@ export function Portal() {
             
             try {
               const parsed = JSON.parse(data);
+              
+              // Check for tool calls in the response
+              const toolCallData = parsed.choices?.[0]?.delta?.tool_calls;
+              if (toolCallData && Array.isArray(toolCallData)) {
+                for (const tc of toolCallData) {
+                  if (tc.function) {
+                    const existingIndex = toolCalls.findIndex(t => t.name === tc.function.name);
+                    if (existingIndex === -1) {
+                      toolCalls.push({
+                        name: tc.function.name,
+                        args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {},
+                        status: 'executing'
+                      });
+                    }
+                  }
+                }
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, toolCalls: [...toolCalls] }
+                      : msg
+                  )
+                );
+              }
+              
               const content = parsed.choices?.[0]?.delta?.content;
               if (content) {
                 assistantMessageContent += content;
@@ -779,6 +898,7 @@ export function Portal() {
           model: selectedModel,
           preamble: selectedPreamble === 'custom' ? undefined : selectedPreamble, // Only send preamble name if not custom
           stream: true,
+          enable_tools: true, // Explicitly enable tool calling
         }),
       });
 
@@ -795,6 +915,7 @@ export function Portal() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let assistantMessageContent = '';
+      const toolCalls: ToolCall[] = [];
       
       // Create initial assistant message
       const assistantMessageId = (Date.now() + 1).toString();
@@ -803,6 +924,7 @@ export function Portal() {
         role: 'assistant',
         content: '',
         timestamp: new Date(),
+        toolCalls: [],
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -815,9 +937,44 @@ export function Portal() {
         const lines = chunk.split('\n');
         
         for (const line of lines) {
-          // Skip comments (status messages)
+          // Skip comments but check for tool execution status
           if (line.startsWith(':')) {
-            console.debug('Status:', line.slice(2));
+            const status = line.slice(2).trim();
+            console.debug('Status:', status);
+            
+            // Check for tool execution messages
+            if (status.includes('Executing tool:') || status.includes('Tool:')) {
+              const toolMatch = status.match(/(?:Executing tool:|Tool:)\s*(\w+)/);
+              if (toolMatch) {
+                const toolName = toolMatch[1];
+                toolCalls.push({
+                  name: toolName,
+                  args: {},
+                  status: 'executing'
+                });
+                
+                // Update message with tool call
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, toolCalls: [...toolCalls] }
+                      : msg
+                  )
+                );
+              }
+            } else if (status.includes('Tool result:') || status.includes('completed')) {
+              // Mark last tool as completed
+              if (toolCalls.length > 0) {
+                toolCalls[toolCalls.length - 1].status = 'completed';
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, toolCalls: [...toolCalls] }
+                      : msg
+                  )
+                );
+              }
+            }
             continue;
           }
           
@@ -827,6 +984,32 @@ export function Portal() {
             
             try {
               const parsed = JSON.parse(data);
+              
+              // Check for tool calls in the response
+              const toolCallData = parsed.choices?.[0]?.delta?.tool_calls;
+              if (toolCallData && Array.isArray(toolCallData)) {
+                for (const tc of toolCallData) {
+                  if (tc.function) {
+                    const existingIndex = toolCalls.findIndex(t => t.name === tc.function.name);
+                    if (existingIndex === -1) {
+                      toolCalls.push({
+                        name: tc.function.name,
+                        args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {},
+                        status: 'executing'
+                      });
+                    }
+                  }
+                }
+                
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, toolCalls: [...toolCalls] }
+                      : msg
+                  )
+                );
+              }
+              
               // OpenAI-compatible format: choices[0].delta.content
               const content = parsed.choices?.[0]?.delta?.content;
               if (content) {
@@ -1193,23 +1376,103 @@ export function Portal() {
                       </div>
                     )}
 
-                    {message.role === 'assistant' ? (
-                      <div className="text-gray-100 leading-relaxed prose prose-invert prose-sm max-w-none
-                        prose-headings:text-valhalla-gold prose-headings:font-semibold
-                        prose-p:text-gray-100 prose-p:leading-relaxed
-                        prose-a:text-valhalla-gold prose-a:underline hover:prose-a:text-yellow-300
-                        prose-strong:text-gray-50 prose-strong:font-semibold
-                        prose-code:text-valhalla-gold prose-code:bg-norse-rune/50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:break-words
-                        prose-pre:bg-norse-rune/30 prose-pre:border prose-pre:border-norse-rune prose-pre:rounded-lg prose-pre:overflow-x-auto prose-pre:max-w-full
-                        prose-pre:code:break-normal prose-pre:code:whitespace-pre
-                        prose-ul:text-gray-100 prose-ol:text-gray-100
-                        prose-li:text-gray-100 prose-li:marker:text-valhalla-gold
-                        prose-blockquote:border-l-valhalla-gold prose-blockquote:text-gray-300
-                        prose-hr:border-norse-rune">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {message.content}
-                        </ReactMarkdown>
+                    {/* Tool Calls / Thinking Section */}
+                    {message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0 && (
+                      <div className="mb-3 border border-norse-rune rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => setExpandedThinking(prev => ({
+                            ...prev,
+                            [message.id]: !prev[message.id]
+                          }))}
+                          className="w-full flex items-center justify-between px-4 py-2.5 bg-norse-rune/30 hover:bg-norse-rune/50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <ChevronRight 
+                              className={`w-4 h-4 text-valhalla-gold transition-transform ${
+                                expandedThinking[message.id] ? 'rotate-90' : ''
+                              }`}
+                            />
+                            <span className="text-sm font-medium text-valhalla-gold">
+                              Thinking
+                              {message.toolCalls.some(tc => tc.status === 'executing') && (
+                                <span className="ml-2 inline-flex">
+                                  <span className="animate-pulse">.</span>
+                                  <span className="animate-pulse" style={{ animationDelay: '0.2s' }}>.</span>
+                                  <span className="animate-pulse" style={{ animationDelay: '0.4s' }}>.</span>
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-400">
+                            {message.toolCalls.length} tool call{message.toolCalls.length !== 1 ? 's' : ''}
+                          </span>
+                        </button>
+                        
+                        {expandedThinking[message.id] && (
+                          <div className="px-4 py-3 space-y-2 bg-[#0a0e1a]">
+                            {message.toolCalls.map((toolCall, index) => (
+                              <div 
+                                key={index}
+                                className="text-sm font-mono"
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <span className={`w-2 h-2 rounded-full ${
+                                    toolCall.status === 'executing' 
+                                      ? 'bg-yellow-500 animate-pulse' 
+                                      : 'bg-green-500'
+                                  }`}></span>
+                                  <span className="text-valhalla-gold font-semibold">
+                                    {toolCall.name}
+                                  </span>
+                                  {toolCall.status === 'executing' && (
+                                    <span className="text-gray-400 text-xs">executing...</span>
+                                  )}
+                                </div>
+                                {Object.keys(toolCall.args).length > 0 && (
+                                  <div className="ml-4 mt-1 text-gray-400 text-xs">
+                                    <pre className="whitespace-pre-wrap break-words">
+                                      {JSON.stringify(toolCall.args, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                                {toolCall.result && (
+                                  <div className="ml-4 mt-1 text-green-400 text-xs">
+                                    ✓ {toolCall.result.substring(0, 100)}
+                                    {toolCall.result.length > 100 && '...'}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
+                    )}
+
+                    {message.role === 'assistant' ? (
+                      message.content ? (
+                        <div className="text-gray-100 leading-relaxed prose prose-invert prose-sm max-w-none
+                          prose-headings:text-valhalla-gold prose-headings:font-semibold
+                          prose-p:text-gray-100 prose-p:leading-relaxed
+                          prose-a:text-valhalla-gold prose-a:underline hover:prose-a:text-yellow-300
+                          prose-strong:text-gray-50 prose-strong:font-semibold
+                          prose-code:text-valhalla-gold prose-code:bg-norse-rune/50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:break-words
+                          prose-pre:bg-norse-rune/30 prose-pre:border prose-pre:border-norse-rune prose-pre:rounded-lg prose-pre:overflow-x-auto prose-pre:max-w-full
+                          prose-pre:code:break-normal prose-pre:code:whitespace-pre
+                          prose-ul:text-gray-100 prose-ol:text-gray-100
+                          prose-li:text-gray-100 prose-li:marker:text-valhalla-gold
+                          prose-blockquote:border-l-valhalla-gold prose-blockquote:text-gray-300
+                          prose-hr:border-norse-rune">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <div className="flex space-x-2">
+                          <div className="w-2 h-2 bg-valhalla-gold rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-valhalla-gold rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-2 h-2 bg-valhalla-gold rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        </div>
+                      )
                     ) : editingMessageId === message.id ? (
                       /* Editing mode for user message */
                       <div className="space-y-2">
@@ -1262,8 +1525,8 @@ export function Portal() {
               </div>
             ))}
 
-            {/* Loading Indicator */}
-            {isLoading && (
+            {/* Loading Indicator - Only show if we haven't started receiving response yet */}
+            {isLoading && messages.length > 0 && messages[messages.length - 1].role !== 'assistant' && (
               <div className="flex items-start space-x-4">
                 <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-valhalla-gold to-yellow-600 flex items-center justify-center shadow-lg">
                   <Sparkles className="w-5 h-5 text-norse-night animate-pulse" />
@@ -1277,6 +1540,33 @@ export function Portal() {
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Copy Conversation Button - Appears at end of messages */}
+            {messages.length > 0 && (
+              <div className="flex justify-center mt-8 mb-4">
+                <button
+                  onClick={handleCopyConversation}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-norse-rune hover:bg-valhalla-gold/20 border-2 border-norse-rune hover:border-valhalla-gold rounded-xl transition-all duration-300 group"
+                  title="Copy entire conversation to clipboard"
+                >
+                  {copiedConversation ? (
+                    <>
+                      <Check className="w-5 h-5 text-green-400 transition-colors flex-shrink-0" />
+                      <span className="text-green-400 text-sm font-medium">
+                        Copied!
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-5 h-5 text-gray-300 group-hover:text-valhalla-gold transition-colors flex-shrink-0" />
+                      <span className="text-gray-300 group-hover:text-valhalla-gold text-sm font-medium">
+                        Copy Conversation
+                      </span>
+                    </>
+                  )}
+                </button>
               </div>
             )}
 

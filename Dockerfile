@@ -42,7 +42,6 @@ RUN apk add --no-cache curl
 COPY --chown=node:node --from=builder /app/build ./build
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/package*.json ./
-COPY --chown=node:node --from=builder /app/.mimir ./.mimir
 COPY --chown=node:node --from=builder /app/docs ./docs
 COPY --chown=node:node --from=builder /app/frontend/dist ./frontend/dist
 

@@ -15,7 +15,7 @@ import type { IGraphManager } from '../types/index.js';
 import { handleVectorSearchNodes } from '../tools/vectorSearch.tools.js';
 import { CopilotAgentClient, LLMProvider } from '../orchestrator/llm-client.js';
 import { normalizeProvider, fetchAvailableModels } from '../orchestrator/types.js';
-import { allTools } from '../orchestrator/tools.js';
+import { consolidatedTools } from '../orchestrator/tools.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -164,17 +164,17 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
    */
   router.get('/api/tools', async (req: any, res: any) => {
     try {
-      // Return tool names and descriptions from allTools
-      const tools = allTools.map(tool => ({
+      // Return tool names and descriptions from consolidatedTools
+      const tools = consolidatedTools.map(tool => ({
         name: tool.name,
         description: tool.description,
-        category: 'mcp', // All tools are MCP tools
+        category: tool.name.startsWith('memory_') || tool.name === 'todo' || tool.name === 'todo_list' ? 'mcp' : 'filesystem',
       }));
 
       res.json({
         tools,
         count: tools.length,
-        description: 'Available MCP tools that agents can call during chat completions'
+        description: 'Available tools for agents (consolidated API - 14 tools: 8 filesystem + 6 MCP)'
       });
     } catch (error: any) {
       console.error('Error listing tools:', error);
@@ -282,10 +282,10 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
 
       // Prepare tools for agent (filter if specific tools requested)
       const agentTools = enable_tools 
-        ? (requestedTools ? allTools.filter(t => requestedTools.includes(t.name)) : allTools)
+        ? (requestedTools ? consolidatedTools.filter(t => requestedTools.includes(t.name)) : consolidatedTools)
         : []; // Empty array disables agent mode
       
-      console.log(`🔧 Tools enabled: ${enable_tools}, count: ${agentTools.length}`);
+      console.log(`🔧 Tools enabled: ${enable_tools}, count: ${agentTools.length} (consolidated API)`);
 
       // Set up SSE if streaming
       if (stream) {

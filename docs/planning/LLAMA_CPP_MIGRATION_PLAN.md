@@ -756,7 +756,7 @@ environment:
 2. ✅ Found existing models in `./ollama_models/models/blobs/`
    - `nomic-embed-text` (261.58 MB) - sha256-970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6
    - `mxbai-embed-large` (638.58 MB) - sha256-819c2adf5ce6df2b6bd2ae4ca90d2a69f060afeb438d0c171db57daa02e39c3d
-3. ✅ Updated `docker-compose.win64.yml` with llama.cpp server
+3. ✅ Updated `docker-compose.amd64.yml` with llama.cpp server
 4. ✅ Stopped Ollama container
 5. ✅ Started llama.cpp server with CUDA support
 6. ✅ Health check passed: `{"status":"ok"}`

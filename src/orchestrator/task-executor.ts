@@ -8,15 +8,13 @@
  */
 
 import { CopilotAgentClient } from './llm-client.js';
-import { CopilotModel } from './types.js';
 import { LLMConfigLoader } from '../config/LLMConfigLoader.js';
 import { createGraphManager } from '../managers/index.js';
 import type { GraphManager } from '../managers/GraphManager.js';
-import { allTools } from './tools.js';
-import { createAgent } from './create-agent.js';
-import fs from 'fs/promises';
+import { consolidatedTools } from './tools.js';
 import path from 'path';
 import crypto from 'crypto';
+import fs from 'fs/promises';
 
 
 // Module-level GraphManager instance (initialized on first use)
@@ -100,35 +98,6 @@ async function resolveModelSelection(
   }
   
   return { agentType };
-}
-
-/**
- * Map friendly model names to actual CopilotModel enum values
- */
-function mapModelName(friendlyName: string): CopilotModel {
-  const normalized = friendlyName.toLowerCase().trim();
-  
-  // Direct mappings
-  const modelMap: Record<string, CopilotModel> = {
-    'gpt-4.1': CopilotModel.GPT_4_1,
-    'gpt-4': CopilotModel.GPT_4,
-    'gpt-4o': CopilotModel.GPT_4O,
-    'gpt-4o-mini': CopilotModel.GPT_4O_MINI,
-    'claude-sonnet-4': CopilotModel.CLAUDE_SONNET_4,
-    'claude 3.7 sonnet': CopilotModel.CLAUDE_3_7_SONNET,
-    'claude-3.7-sonnet': CopilotModel.CLAUDE_3_7_SONNET,
-    'o3-mini': CopilotModel.O3_MINI,
-    'gemini-2.5-pro': CopilotModel.GEMINI_2_5_PRO,
-  };
-  
-  // Try exact match first
-  if (modelMap[normalized]) {
-    return modelMap[normalized];
-  }
-  
-  // Fallback: default to GPT-4.1 for testing
-  console.warn(`⚠️  Unknown model "${friendlyName}", defaulting to GPT-4.1`);
-  return CopilotModel.GPT_4_1;
 }
 
 export interface TaskDefinition {
@@ -819,7 +788,7 @@ async function executeQCAgent(
       ...modelSelection, // Spread provider/model or agentType
       temperature: 0.0, // Maximum consistency and strictness
       maxTokens: 1000, // STRICT LIMIT: Force concise responses (prevents verbose QC bloat)
-      tools: allTools, // QC needs tools to verify worker output
+      tools: consolidatedTools, // QC needs tools to verify worker outputer output
     });
     
     await qcAgent.loadPreamble(qcPreambleContent, true); // true = isContent
@@ -935,7 +904,7 @@ Generate a CONCISE failure report (MAXIMUM 3000 characters) including:
       ...modelSelection, // Spread provider/model or agentType
       temperature: 0.0,
       maxTokens: 2000, // STRICT LIMIT: Concise failure reports only
-      tools: allTools, // QC needs tools to verify worker output
+      tools: consolidatedTools, // QC needs tools to verify worker output
     });
     
     await qcAgent.loadPreamble(task.qcPreamblePath);
@@ -1188,7 +1157,7 @@ Keep your analysis concise and actionable (max 1000 words).`;
       preamblePath: qcPreamblePath,
       agentType: 'qc',
       temperature: 0.0,
-      tools: allTools, // Analysis agent needs tools to inspect worker output
+      tools: consolidatedTools, // Analysis agent needs tools to inspect worker output
     });
     
     await analysisAgent.loadPreamble(qcPreamblePath);
@@ -1618,7 +1587,7 @@ ${task.prompt}`;
         preamblePath: 'memory', // Dummy value - content passed directly
         ...modelSelection, // Spread provider/model or agentType
         temperature: 0.0,
-        tools: allTools, // Worker needs tools to execute tasks (filesystem + graph)
+        tools: consolidatedTools, // Worker needs tools to execute tasks (filesystem + graph)
       });
       
       await workerAgent.loadPreamble(preambleContent, true); // true = isContent

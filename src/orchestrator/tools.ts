@@ -305,32 +305,28 @@ export const fileSystemTools = [
 ];
 
 /**
- * Export all tools (includes MCP tools if enabled)
+ * Export all tools (includes MCP tools)
  */
-import { mcpTools, getMCPToolNames } from './mcp-tools.js';
+import { mcpTools, consolidatedMCPTools, getMCPToolNames } from './mcp-tools.js';
+import { memoryNodeTool, memoryEdgeTool } from './mcp-tools.js';
 
-// Planning agents (PM/Ecko) only need basic filesystem + minimal graph tools
-// This prevents hitting OpenAI's 128 tool limit
-import { 
-  graphSearchNodesTool,
-  graphGetNodeTool,
-  graphQueryNodesTool,
-  graphGetSubgraphTool,
-  graphGetNeighborsTool
-} from './mcp-tools.js';
-
-export const planningTools = [
+/**
+ * Consolidated tools (8 filesystem + 6 MCP = 14 total)
+ * RECOMMENDED for chat agents to avoid tool limit and reduce API calls
+ */
+export const consolidatedTools = [
   ...fileSystemTools,
-  graphSearchNodesTool,
-  graphGetNodeTool,
-  graphQueryNodesTool,
-  graphGetSubgraphTool,
-  graphGetNeighborsTool,
+  ...consolidatedMCPTools,
 ];
 
-export const allTools = [
+/**
+ * Planning tools for PM/Ecko agents (8 filesystem + 2 MCP = 10 total)
+ * Minimal toolset for planning and high-level coordination
+ */
+export const planningTools = [
   ...fileSystemTools,
-  ...mcpTools,
+  memoryNodeTool,  // All node operations: add, get, update, delete, query, search
+  memoryEdgeTool,  // All edge operations: add, delete, get, neighbors, subgraph
 ];
 
 /**

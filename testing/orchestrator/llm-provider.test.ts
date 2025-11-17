@@ -115,22 +115,6 @@ describe('LLM Provider Abstraction', () => {
       // Cleanup
       await fs.unlink('test-agent.md');
     });
-
-    test('should support legacy model enum (CopilotModel)', async () => {
-      const { CopilotModel } = await import('../../src/orchestrator/types.js');
-      
-      const config: AgentConfig = {
-        preamblePath: 'test-agent.md',
-        model: CopilotModel.GPT_4_1,
-      };
-      
-      await fs.writeFile('test-agent.md', 'You are a test agent.');
-      
-      const client = new CopilotAgentClient(config);
-      expect(client.getModel()).toBe('gpt-4o');
-      
-      await fs.unlink('test-agent.md');
-    });
   });
 
   describe('Ollama Provider', () => {

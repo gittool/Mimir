@@ -58,7 +58,7 @@ The script automatically detects:
 - **macOS x64 (Intel)** → Uses `docker-compose.yml`
 - **Linux ARM64** → Uses `docker-compose.arm64.yml`
 - **Linux x64** → Uses `docker-compose.yml`
-- **Windows** → Uses `docker-compose.win64.yml`
+- **Windows** → Uses `docker-compose.amd64.yml`
 
 ## Docker Compose Files
 
@@ -68,7 +68,7 @@ Each platform-specific file is optimized for that architecture:
   - `timothyswt/llama-cpp-server-arm64:latest` (with embedded model)
   - `timothyswt/copilot-api-arm64:latest`
 
-- **docker-compose.win64.yml**: Uses CUDA-enabled images for Windows
+- **docker-compose.amd64.yml**: Uses CUDA-enabled images for Windows
   - `ghcr.io/ggml-org/llama.cpp:server-cuda` (external model volume)
   - `timothyswt/copilot-api:latest`
 
