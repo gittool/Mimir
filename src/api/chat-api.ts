@@ -11,9 +11,11 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fetch from 'node-fetch';
 import type { IGraphManager } from '../types/index.js';
 import { handleVectorSearchNodes } from '../tools/vectorSearch.tools.js';
+import { CopilotAgentClient, LLMProvider } from '../orchestrator/llm-client.js';
+import { normalizeProvider, fetchAvailableModels } from '../orchestrator/types.js';
+import { allTools } from '../orchestrator/tools.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -26,9 +28,8 @@ interface ChatConfig {
   semanticSearchEnabled: boolean;
   semanticSearchLimit: number;
   minSimilarityThreshold: number;
-  llmBackend: 'copilot' | 'ollama';
-  copilotApiUrl: string;
-  ollamaApiUrl: string;
+  llmProvider: 'openai' | 'ollama' | string;
+  llmApiUrl: string;
   defaultModel: string;
   embeddingModel: string;
 }
@@ -49,20 +50,33 @@ interface ChatCompletionRequest {
   model?: string;
   stream?: boolean;
   preamble?: string; // Chatmode/preamble name (e.g., 'mimir-v2', 'debug', 'research')
+  enable_tools?: boolean; // Enable MCP tool calling (default: true)
+  tools?: string[]; // Specific tools to enable (optional)
+  max_tool_calls?: number; // Max tool calls per response (default: 3)
 }
 
 /**
  * Default configuration
+ * 
+ * Provider Switching:
+ * - Set LLM_PROVIDER to:
+ *   - 'openai' or 'copilot' (OpenAI-compatible endpoint - GitHub Copilot or OpenAI API)
+ *   - 'ollama' or 'llama.cpp' (Local LLM provider - Ollama or llama.cpp, interchangeable)
+ * - Both providers are OpenAI-compatible and support full MCP tool calling through LangChain agents
+ * - Configure LLM_API_URL for the endpoint (e.g., http://copilot-api:4141/v1 or http://localhost:11434)
+ * 
+ * Provider aliases are normalized automatically:
+ *   llama.cpp → ollama (local LLM)
+ *   copilot → openai (OpenAI-compatible API)
  */
 const DEFAULT_CONFIG: ChatConfig = {
   semanticSearchEnabled: true,
   semanticSearchLimit: 10,
   minSimilarityThreshold: 0.55,
-  llmBackend: 'copilot',
-  copilotApiUrl: process.env.COPILOT_API_URL || 'http://copilot-api:4141/v1',
-  ollamaApiUrl: process.env.OLLAMA_API_URL || 'http://host.docker.internal:11434',
+  llmProvider: normalizeProvider(process.env.LLM_PROVIDER).toString(),
+  llmApiUrl: process.env.LLM_API_URL || 'http://copilot-api:4141/v1',
   defaultModel: process.env.DEFAULT_MODEL || 'gpt-4.1',
-  embeddingModel: process.env.EMBEDDING_MODEL || 'mxbai-embed-large',
+  embeddingModel: process.env.EMBEDDING_MODEL || 'nomic-embed-text',
 };
 
 /**
@@ -145,13 +159,85 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
   });
 
   /**
+   * GET /api/tools
+   * List available MCP tools for the agent
+   */
+  router.get('/api/tools', async (req: any, res: any) => {
+    try {
+      // Return tool names and descriptions from allTools
+      const tools = allTools.map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        category: 'mcp', // All tools are MCP tools
+      }));
+
+      res.json({
+        tools,
+        count: tools.length,
+        description: 'Available MCP tools that agents can call during chat completions'
+      });
+    } catch (error: any) {
+      console.error('Error listing tools:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/models
+   * List available models from configured LLM provider
+   * Fetches dynamically from the provider's API endpoint
+   */
+  router.get('/api/models', async (req: any, res: any) => {
+    try {
+      const models = await fetchAvailableModels(config.llmApiUrl);
+      res.json({
+        models: models.map(m => ({
+          id: m.id,
+          owned_by: m.owned_by || 'unknown',
+          object: m.object || 'model',
+        })),
+        count: models.length,
+        provider: config.llmProvider,
+        description: `Available models from configured LLM provider (${config.llmProvider})`
+      });
+    } catch (error: any) {
+      console.error('Error listing models:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
    * POST /v1/chat/completions
-   * OpenAI-compatible RAG-enhanced chat completion with streaming
+   * OpenAI-compatible RAG-enhanced chat completion with streaming & MCP tool support
+   * 
+   * **Provider Switching:**
+   * Configure via environment variables:
+   * - LLM_PROVIDER → 'openai' (OpenAI-compatible endpoint) or 'ollama' (local Ollama)
+   * - LLM_API_URL → Base URL for the LLM endpoint (e.g., http://copilot-api:4141/v1)
+   * - DEFAULT_MODEL → Model name (e.g., gpt-4o for OpenAI, qwen2.5-coder for Ollama)
+   * - EMBEDDING_MODEL → Embedding model (default: nomic-embed-text)
+   * 
+   * **MCP Tools:**
+   * All providers support full MCP tool calling through LangChain agents.
+   * Tools are automatically loaded from src/orchestrator/tools.ts
+   * Enable/disable with enable_tools parameter (default: true)
+   * 
+   * **Examples:**
+   * ```bash
+   * # Use OpenAI-compatible endpoint (copilot-api)
+   * LLM_PROVIDER=openai LLM_API_URL=http://copilot-api:4141/v1 DEFAULT_MODEL=gpt-4o
+   * 
+   * # Use local Ollama
+   * LLM_PROVIDER=ollama LLM_API_URL=http://localhost:11434 DEFAULT_MODEL=qwen2.5-coder
+   * 
+   * # Use actual OpenAI API
+   * LLM_PROVIDER=openai LLM_API_URL=https://api.openai.com/v1 DEFAULT_MODEL=gpt-4-turbo
+   * ```
    */
   router.post('/v1/chat/completions', async (req: any, res: any) => {
     try {
       const body: ChatCompletionRequest = req.body;
-      const { messages, stream = true, preamble } = body;
+      const { messages, stream = true, preamble, enable_tools = true, tools: requestedTools, max_tool_calls = 3 } = body;
 
       if (!messages || messages.length === 0) {
         return res.status(400).json({ error: 'No messages provided' });
@@ -167,6 +253,9 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
 
       console.log(`\n💬 Chat request: ${userMessage.substring(0, 100)}...`);
       console.log(`📨 Incoming messages: ${messages.length} (${messages.map(m => m.role).join(', ')})`);
+      if (enable_tools) {
+        console.log(`🔧 Tools enabled (max calls: ${max_tool_calls})`);
+      }
 
       // Check if user already provided a system prompt
       const hasSystemPrompt = messages.some(m => m.role === 'system');
@@ -190,6 +279,13 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
       }
       
       console.log(`📋 Using model: ${selectedModel}`);
+
+      // Prepare tools for agent (filter if specific tools requested)
+      const agentTools = enable_tools 
+        ? (requestedTools ? allTools.filter(t => requestedTools.includes(t.name)) : allTools)
+        : []; // Empty array disables agent mode
+      
+      console.log(`🔧 Tools enabled: ${enable_tools}, count: ${agentTools.length}`);
 
       // Set up SSE if streaming
       if (stream) {
@@ -328,42 +424,118 @@ ${relevantContext}
           }
         }
       } else {
-        // No system prompt provided - construct messages with Claudette preamble
-        chatMessages = [
-          { role: 'system', content: activePreamble! }
-        ];
+        // No system prompt provided - will use Claudette preamble via agent
+        chatMessages = [...messages];
+      }
 
-        // Add context as separate user message if available
-        if (contextSection && relevantContext) {
-          chatMessages.push({
-            role: 'user',
-            content: `## RELEVANT CONTEXT FROM KNOWLEDGE BASE\n\n${relevantContext}`
-          });
+      console.log(`📋 Message count: ${messages.length} (${messages.map(m => m.role).join(', ')})`);
+
+      // Determine provider from config (with alias support)
+      let provider: LLMProvider;
+      let baseUrl: string;
+      
+      const normalizedProvider = normalizeProvider(config.llmProvider);
+      if (normalizedProvider === LLMProvider.OLLAMA) {
+        provider = LLMProvider.OLLAMA;
+      } else {
+        // OpenAI-compatible endpoint (copilot or openai)
+        provider = LLMProvider.OPENAI;
+      }
+      
+      baseUrl = config.llmApiUrl;
+
+      const providerDisplay = provider === LLMProvider.OLLAMA ? 'Ollama/llama.cpp' : 'OpenAI-compatible (Copilot/OpenAI)';
+      console.log(`🤖 Using provider: ${providerDisplay}, model: ${selectedModel}, base: ${baseUrl}`);
+
+      // Build task for agent - include RAG context and conversation history
+      let task = '';
+      
+      // Add RAG context if available
+      if (contextSection && relevantContext) {
+        task += contextSection + '\n\n';
+      }
+      
+      // Add conversation history (user/assistant messages)
+      const conversationParts: string[] = [];
+      for (const msg of messages) {
+        if (msg.role === 'user') {
+          conversationParts.push(`User: ${msg.content}`);
+        } else if (msg.role === 'assistant') {
+          conversationParts.push(`Assistant: ${msg.content}`);
         }
+      }
+      
+      task += conversationParts.join('\n\n');
 
-        // Add all user/assistant messages from request
-        chatMessages.push(...messages);
+      console.log(`📋 Task length: ${task.length} characters`);
+
+      // Initialize agent with appropriate preamble
+      // Note: CopilotAgentClient expects both copilotBaseUrl and openaiBaseUrl for OpenAI-compatible endpoints
+      const agent = new CopilotAgentClient({
+        preamblePath: '', // Will load content directly
+        model: selectedModel,
+        provider,
+        copilotBaseUrl: provider === LLMProvider.OPENAI ? baseUrl : undefined, // Used for OpenAI-compatible endpoints (includes copilot-api, OpenAI)
+        ollamaBaseUrl: provider === LLMProvider.OLLAMA ? baseUrl : undefined,   // Used for local Ollama or llama.cpp
+        tools: agentTools, // Use filtered/enabled tools
+        temperature: 0.7,
+      });
+
+      // Load preamble (use system prompt if provided, otherwise Claudette preamble)
+      const systemContent = hasSystemPrompt 
+        ? messages.find(m => m.role === 'system')?.content || activePreamble!
+        : activePreamble!;
+      
+      await agent.loadPreamble(systemContent, true); // true = load as content, not file path
+
+      if (stream) {
+        const providerDisplay = provider === LLMProvider.OLLAMA ? 'Ollama/llama.cpp' : 'OpenAI';
+        res.write(`: 🤖 Processing with ${selectedModel} (${providerDisplay})...\n\n`);
       }
 
-      console.log(`📋 Final message structure: ${chatMessages.length} messages (${chatMessages.map(m => m.role).join(', ')})`);
-      console.log(`📋 Total content length: ${chatMessages.reduce((sum, m) => sum + m.content.length, 0)} characters`);
+      // Execute agent
+      console.log(`🚀 Executing agent...`);
+      const result = await agent.execute(task, 0, max_tool_calls);
 
-      // Send processing status
-      const backendUrl = config.llmBackend === 'ollama' ? config.ollamaApiUrl : config.copilotApiUrl;
-      const backendName = config.llmBackend === 'ollama' ? 'Ollama' : 'Copilot API';
+      // Stream response in OpenAI-compatible format
       if (stream) {
-        res.write(`: 🤖 Processing with ${selectedModel} (${backendName})...\n\n`);
-      }
-
-      // Call LLM (both providers use OpenAI-compatible format)
-      console.log(`🤖 Calling ${backendName} at ${backendUrl} with model: ${selectedModel}`);
-      await streamChatCompletion(chatMessages, selectedModel, backendUrl, res, stream, sendChunk, config.llmBackend === 'copilot');
-
-      // Send completion status
-      if (stream) {
-        res.write(`: ✅ Response complete\n\n`);
+        // Split output into chunks for streaming effect
+        const output = result.output;
+        const chunkSize = 50; // characters per chunk
+        
+        for (let i = 0; i < output.length; i += chunkSize) {
+          const chunk = output.slice(i, Math.min(i + chunkSize, output.length));
+          sendChunk(chunk, null);
+        }
+        
+        // Send finish
+        sendChunk('', 'stop');
+        res.write(`: ✅ Response complete (${result.toolCalls} tool calls)\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
+      } else {
+        // Non-streaming response
+        res.json({
+          id: `chatcmpl-${Date.now()}`,
+          object: 'chat.completion',
+          created: Math.floor(Date.now() / 1000),
+          model: selectedModel,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: result.output,
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: result.tokens.input,
+            completion_tokens: result.tokens.output,
+            total_tokens: result.tokens.input + result.tokens.output,
+          },
+        });
       }
 
     } catch (error: any) {
@@ -405,12 +577,12 @@ ${relevantContext}
       // Normalize input to array
       const inputs = Array.isArray(input) ? input : [input];
 
-      // Call Ollama for embeddings
-      const ollamaUrl = `${config.ollamaApiUrl}/api/embeddings`;
+      // Call LLM endpoint for embeddings (Ollama or OpenAI-compatible)
+      const embeddingsUrl = `${config.llmApiUrl}/api/embeddings`;
       const embeddings: number[][] = [];
 
       for (const text of inputs) {
-        const response = await fetch(ollamaUrl, {
+        const response = await fetch(embeddingsUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -423,7 +595,7 @@ ${relevantContext}
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Ollama embeddings error: ${response.status} - ${errorText}`);
+          throw new Error(`Embeddings error: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json() as any;
@@ -465,8 +637,8 @@ ${relevantContext}
    */
   const handleModelsRequest = async (req: any, res: any) => {
     try {
-      // Proxy to configured chat provider's models endpoint
-      const providerUrl = config.copilotApiUrl.replace('/v1', ''); // Remove /v1 suffix if present
+      // Proxy to configured LLM endpoint's models endpoint
+      const providerUrl = config.llmApiUrl.replace('/v1', ''); // Remove /v1 suffix if present
       const modelsUrl = `${providerUrl}/models`;
       
       console.log(`🔗 Proxying ${req.path} request to chat provider: ${modelsUrl}`);
@@ -520,93 +692,4 @@ ${relevantContext}
   router.get('/models', handleModelsRequest);
 
   return router;
-}
-
-/**
- * Unified streaming function for OpenAI-compatible chat completions
- * Works with both Ollama and OpenAI/Copilot APIs
- */
-async function streamChatCompletion(
-  messages: ChatMessage[],
-  model: string,
-  baseUrl: string,
-  res: any,
-  stream: boolean,
-  sendChunk: (content: string, finish_reason: string | null) => void,
-  requiresAuth: boolean = false
-) {
-  // Construct the correct endpoint
-  // Ollama: baseUrl/v1/chat/completions or baseUrl/api/chat
-  // Copilot/OpenAI: baseUrl/chat/completions
-  let url = baseUrl;
-  if (baseUrl.includes('11434')) {
-    // Ollama - try v1 endpoint first (OpenAI-compatible)
-    url = `${baseUrl}/v1/chat/completions`;
-  } else if (!baseUrl.includes('/chat/completions')) {
-    url = `${baseUrl}/chat/completions`;
-  }
-
-  const headers: any = {
-    'Content-Type': 'application/json',
-  };
-
-  if (requiresAuth) {
-    headers['Authorization'] = 'Bearer sk-copilot-dummy';
-  }
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: true,
-      temperature: 0.7,
-      max_tokens: 128000,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Chat completion error (${url}): ${response.status} - ${errorText}`);
-  }
-
-  if (!response.body) {
-    throw new Error('No response body from chat completion API');
-  }
-
-  // Stream SSE response in OpenAI-compatible format
-  const reader = response.body;
-  let buffer = '';
-
-  for await (const chunk of reader as any) {
-    buffer += chunk.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') {
-          sendChunk('', 'stop');
-          continue;
-        }
-
-        try {
-          const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) {
-            sendChunk(content, null);
-          }
-          // Check for finish_reason
-          const finishReason = parsed.choices?.[0]?.finish_reason;
-          if (finishReason) {
-            sendChunk('', finishReason);
-          }
-        } catch (e) {
-          // Skip invalid JSON
-        }
-      }
-    }
-  }
 }

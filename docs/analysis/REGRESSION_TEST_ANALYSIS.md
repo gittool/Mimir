@@ -189,7 +189,7 @@ const client = new CopilotAgentClient({
 const client = new CopilotAgentClient({
   preamblePath: 'agent.md',
   provider: LLMProvider.COPILOT,  // ✅ Explicit choice
-  model: 'gpt-4o',
+  model: 'gpt-4.1',
 });
 ```
 

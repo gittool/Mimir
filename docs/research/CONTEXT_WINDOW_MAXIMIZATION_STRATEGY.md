@@ -126,10 +126,10 @@
     },
     "copilot": {
       "baseUrl": "http://localhost:4141/v1",
-      "defaultModel": "gpt-4o",
+      "defaultModel": "gpt-4.1",
       "models": {
-        "gpt-4o": {
-          "name": "gpt-4o",
+        "gpt-4.1": {
+          "name": "gpt-4.1",
           "contextWindow": 128000,
           "description": "OpenAI's latest multimodal model",
           "recommendedFor": ["pm"],
@@ -609,7 +609,7 @@ export async function monitorContext(
   - Phi-3: `numCtx: 4096`
   - Phi-3 128K: `numCtx: 32768`
   - Llama 3.2: `numCtx: 32768`
-- [ ] Verify cloud model context windows (GPT-4o, Claude, Gemini)
+- [ ] Verify cloud model context windows (gpt-4.1, Claude, Gemini)
 - [ ] Add context usage warnings (>80% threshold)
 - [ ] Document context window trade-offs (speed vs. size)
 
@@ -814,7 +814,7 @@ describe('Context Maximization', () => {
   phi3: { numCtx: 4096 },            // Model maximum
   "phi3:128k": { numCtx: 32768 },   // Practical limit (128K = OOM)
   "llama3.2": { numCtx: 32768 },    // Practical limit (128K = slow)
-  "gpt-4o": { maxTokens: -1 },      // Unlimited (128K context)
+  "gpt-4.1": { maxTokens: -1 },      // Unlimited (128K context)
   "claude-opus-4.1": { maxTokens: -1 } // Unlimited (200K context)
 }
 ```

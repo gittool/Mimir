@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, User, Paperclip, X, Image as ImageIcon, RotateCcw, ChevronDown, Plus } from 'lucide-react';
+import { Send, Sparkles, User, Paperclip, X, Image as ImageIcon, RotateCcw, ChevronDown, Plus, Edit2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { EyeOfMimir } from '../components/EyeOfMimir';
 import { OrchestrationStudioIcon } from '../components/OrchestrationStudioIcon';
@@ -157,6 +157,8 @@ export function Portal() {
   const [showCustomPreambleModal, setShowCustomPreambleModal] = useState(false);
   const [customPreambleText, setCustomPreambleText] = useState('');
   const [customPreambleContent, setCustomPreambleContent] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -437,6 +439,190 @@ export function Portal() {
     setAttachedFiles([]);
     setInput('');
     setIsLoading(false);
+    setEditingMessageId(null);
+    setEditingMessageText('');
+  };
+
+  /**
+   * Starts editing a user message.
+   * Allows re-sending conversation from that point.
+   * 
+   * @function handleEditMessage
+   * @param {string} messageId - ID of the message to edit
+   * @param {string} content - Current content of the message
+   * @returns {void}
+   * 
+   * @example
+   * ```typescript
+   * handleEditMessage('msg-123', 'Original question');
+   * // User can now edit and re-send
+   * ```
+   */
+  const handleEditMessage = (messageId: string, content: string) => {
+    setEditingMessageId(messageId);
+    setEditingMessageText(content);
+  };
+
+  /**
+   * Cancels message editing without changes.
+   * 
+   * @function handleCancelEdit
+   * @returns {void}
+   */
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditingMessageText('');
+  };
+
+  /**
+   * Saves edited message and re-sends conversation from that point.
+   * Removes all messages after the edited one and re-submits.
+   * 
+   * @function handleSaveEdit
+   * @returns {Promise<void>}
+   * 
+   * @example
+   * User edits message and re-sends:
+   * ```typescript
+   * // Original: [msg1, msg2, msg3, msg4]
+   * // User edits msg2
+   * await handleSaveEdit();
+   * // Result: [msg1, edited-msg2] → re-sends to API
+   * ```
+   */
+  const handleSaveEdit = async () => {
+    if (!editingMessageId || !editingMessageText.trim()) return;
+
+    // Find the index of the message being edited
+    const messageIndex = messages.findIndex(m => m.id === editingMessageId);
+    if (messageIndex === -1) return;
+
+    // Keep only messages up to (and including) the edited one
+    const updatedMessage: Message = {
+      ...messages[messageIndex],
+      content: editingMessageText.trim(),
+      timestamp: new Date(),
+    };
+
+    // Remove all messages after the edited one
+    const messagesUpToEdit = messages.slice(0, messageIndex);
+    setMessages([...messagesUpToEdit, updatedMessage]);
+    
+    // Clear edit state
+    setEditingMessageId(null);
+    setEditingMessageText('');
+    setIsLoading(true);
+
+    // Re-send the conversation from this point
+    try {
+      // Build messages array - include custom preamble as system message if selected
+      const messagesPayload: any[] = [];
+      
+      if (selectedPreamble === 'custom' && customPreambleContent) {
+        messagesPayload.push({ role: 'system', content: customPreambleContent });
+      }
+      
+      // Add all previous messages in conversation history
+      for (const msg of messagesUpToEdit) {
+        messagesPayload.push({ 
+          role: msg.role === 'user' ? 'user' : 'assistant', 
+          content: msg.content 
+        });
+      }
+      
+      // Add the edited user message
+      messagesPayload.push({ role: 'user', content: editingMessageText.trim() });
+
+      // Call API with full conversation history
+      const response = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: messagesPayload,
+          model: selectedModel,
+          preamble: selectedPreamble === 'custom' ? undefined : selectedPreamble,
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('No response body');
+      }
+
+      // Process streaming response
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let assistantMessageContent = '';
+      
+      const assistantMessageId = (Date.now() + 1).toString();
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith(':')) {
+            continue;
+          }
+          
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') break;
+            
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                assistantMessageContent += content;
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, content: assistantMessageContent }
+                      : msg
+                  )
+                );
+              }
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+      
+      if (!assistantMessageContent) {
+        throw new Error('No response content received');
+      }
+      
+    } catch (error: any) {
+      console.error('Chat error:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `I apologize, but I encountered an error: ${error.message}. Please try again.`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const createFilePreview = async (file: File): Promise<string> => {
@@ -1024,10 +1210,48 @@ export function Portal() {
                           {message.content}
                         </ReactMarkdown>
                       </div>
+                    ) : editingMessageId === message.id ? (
+                      /* Editing mode for user message */
+                      <div className="space-y-2">
+                        <textarea
+                          value={editingMessageText}
+                          onChange={(e) => setEditingMessageText(e.target.value)}
+                          className="w-full p-3 bg-[#0a0e1a] border-2 border-valhalla-gold rounded-xl text-gray-100 focus:outline-none focus:border-valhalla-gold resize-none"
+                          rows={3}
+                          autoFocus
+                        />
+                        <div className="flex items-center space-x-2 justify-end">
+                          <button
+                            onClick={handleCancelEdit}
+                            className="px-3 py-1.5 bg-norse-rune hover:bg-gray-700 border border-norse-rune rounded-lg text-gray-300 text-sm transition-all"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveEdit}
+                            disabled={!editingMessageText.trim() || isLoading}
+                            className="px-3 py-1.5 bg-valhalla-gold hover:bg-yellow-500 border border-valhalla-gold rounded-lg text-norse-night text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Save & Re-send
+                          </button>
+                        </div>
+                      </div>
                     ) : (
-                      <p className="text-gray-100 leading-relaxed whitespace-pre-wrap">
-                        {message.content}
-                      </p>
+                      /* Normal user message display */
+                      <div className="group relative">
+                        <p className="text-gray-100 leading-relaxed whitespace-pre-wrap pr-8">
+                          {message.content}
+                        </p>
+                        {!isLoading && (
+                          <button
+                            onClick={() => handleEditMessage(message.id, message.content)}
+                            className="absolute top-0 right-0 p-1 text-gray-400 hover:text-valhalla-gold opacity-0 group-hover:opacity-100 transition-all rounded"
+                            title="Edit and re-send from this point"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     )}
                     
                     <p className="text-xs text-gray-500 mt-2">

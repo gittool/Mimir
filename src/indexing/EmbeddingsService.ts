@@ -415,12 +415,6 @@ export class EmbeddingsService {
         input: text,
       });
       
-      // Debug logging for llama.cpp
-      if (this.provider === 'llama.cpp') {
-        console.log(`🔍 llama.cpp request: ${this.baseUrl}/embeddings`);
-        console.log(`📦 Body length: ${requestBody.length} bytes`);
-      }
-      
       const response = await fetch(`${this.baseUrl}/embeddings`, {
         method: 'POST',
         headers,

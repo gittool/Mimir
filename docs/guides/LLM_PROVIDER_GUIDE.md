@@ -82,9 +82,9 @@ claude-3.5-sonnet
 
 ```json
 {
-  "PM_MODEL": "gpt-4o",
-  "WORKER_MODEL": "gpt-4o",
-  "QC_MODEL": "gpt-4o"
+  "PM_MODEL": "gpt-4.1",
+  "WORKER_MODEL": "gpt-4.1",
+  "QC_MODEL": "gpt-4.1"
 }
 ```
 
@@ -97,17 +97,17 @@ Edit `/Users/c815719/src/playground/mimir/pipelines/mimir_orchestrator.py`:
 
 ```python:66:82:pipelines/mimir_orchestrator.py
 PM_MODEL: str = Field(
-    default="gpt-4o",  # Changed from gpt-4.1
+    default="gpt-4.1",  # Changed from gpt-4.1
     description="Model to use for PM agent (planning)."
 )
 
 WORKER_MODEL: str = Field(
-    default="gpt-4o",  # Changed from gpt-4.1
+    default="gpt-4.1",  # Changed from gpt-4.1
     description="Model to use for worker agents (task execution)."
 )
 
 QC_MODEL: str = Field(
-    default="gpt-4o",  # Changed from gpt-4.1
+    default="gpt-4.1",  # Changed from gpt-4.1
     description="Model to use for QC agents (verification)."
 )
 ```
@@ -283,13 +283,13 @@ PM_MODEL: str = Field(
 
 # High-quality model for Workers (critical execution)
 WORKER_MODEL: str = Field(
-    default="gpt-4o",
+    default="gpt-4.1",
     description="High-quality execution"
 )
 
 # Medium model for QC (verification needs accuracy)
 QC_MODEL: str = Field(
-    default="gpt-4o",
+    default="gpt-4.1",
     description="Thorough verification"
 )
 ```
@@ -307,8 +307,8 @@ QC_MODEL: str = Field(default="llama3.1:8b")
 ```python:42:82:pipelines/mimir_orchestrator.py
 # Use Copilot for PM and QC (strategic)
 COPILOT_API_URL: str = Field(default="http://copilot-api:4141/v1")
-PM_MODEL: str = Field(default="gpt-4o")
-QC_MODEL: str = Field(default="gpt-4o")
+PM_MODEL: str = Field(default="gpt-4.1")
+QC_MODEL: str = Field(default="gpt-4.1")
 
 # Use Ollama for Workers (execution, many calls)
 # NOTE: This requires custom logic to switch base URLs per agent
@@ -370,9 +370,9 @@ WORKER_MODEL: str = Field(default="llama3.1:8b")
 **Future feature** - would allow:
 ```bash
 # In .env
-MIMIR_PM_MODEL=gpt-4o
+MIMIR_PM_MODEL=gpt-4.1
 MIMIR_WORKER_MODEL=gpt-4.1
-MIMIR_QC_MODEL=gpt-4o
+MIMIR_QC_MODEL=gpt-4.1
 ```
 
 ---
