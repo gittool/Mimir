@@ -230,7 +230,7 @@ Multiple ways to attach files to your messages.
 
 Attached files appear as thumbnail previews above the input box.
 
-![File Preview Thumbnails - Screenshot should show: 3-4 file attachments displayed as thumbnails above input box - mix of images and PDF icons, each with filename, X button visible on hover]
+<img width="965" height="626" alt="image" src="https://github.com/user-attachments/assets/f69c7065-545b-4854-96a8-8cdc99c3ee0d" />
 
 **Preview Features:**
 - **Images** - Show thumbnail preview
@@ -242,7 +242,7 @@ Attached files appear as thumbnail previews above the input box.
 
 Files are included with your message when you press Send.
 
-![Message with Attachments - Screenshot should show: User message bubble containing text + 2 image thumbnails below text, both images clickable]
+<img width="1132" height="977" alt="image" src="https://github.com/user-attachments/assets/8ba1ef4a-a58a-48f8-8bad-df7a32fd8946" />
 
 **Attachment Display in Messages:**
 - Shown above message text
@@ -258,7 +258,7 @@ Files are included with your message when you press Send.
 
 Persist important conversations for later semantic retrieval.
 
-![Save Memory Button - Screenshot should show: Header bar with "Save Memory" button visible (only appears when messages exist), Memory rune icon visible, button highlighted]
+<img width="1692" height="1237" alt="image" src="https://github.com/user-attachments/assets/fdde9a54-bd92-4303-9b77-1e76af55f2bf" />
 
 **How to Save:**
 
@@ -266,7 +266,7 @@ Persist important conversations for later semantic retrieval.
 2. Click "Save Memory" button in header
 3. Confirmation dialog appears with Memory ID
 
-![Memory Saved Dialog - Screenshot should show: Browser alert dialog displaying "✅ Conversation saved to memory!" with Memory ID shown below, OK button]
+<img width="1103" height="691" alt="image" src="https://github.com/user-attachments/assets/9c185eed-eeb4-445f-9f02-48c14ad34dad" />
 
 **What Gets Saved:**
 - All messages in current conversation (user + assistant)
@@ -284,7 +284,7 @@ Persist important conversations for later semantic retrieval.
 
 See how past memories inform current responses.
 
-![Memory Context Injected - Screenshot should show: Console/developer tools showing "✅ Found 3 relevant documents" log message, semantic search happening, similarity scores visible]
+<img width="2061" height="818" alt="image" src="https://github.com/user-attachments/assets/a5688805-296b-4ae3-8649-de88aabf56a7" />
 
 **Behind the Scenes:**
 1. You ask: "How do I fix the authentication bug?"
@@ -307,7 +307,7 @@ See how past memories inform current responses.
 
 Start a fresh conversation without losing context.
 
-![New Chat Button - Screenshot should show: "New Chat" button in header with rotating arrows icon, only visible when messages exist, button highlighted]
+<img width="372" height="217" alt="image" src="https://github.com/user-attachments/assets/a4aba908-e760-4ef0-bd9f-0c16d0441f36" />
 
 **When to Use:**
 - Start unrelated conversation
@@ -326,7 +326,7 @@ Start a fresh conversation without losing context.
 
 Access file browsing and indexing controls (when available).
 
-![File Indexing Sidebar - Screenshot should show: Left sidebar slid out, showing file tree or indexing controls, toggle button visible]
+<img width="516" height="765" alt="image" src="https://github.com/user-attachments/assets/624483ee-add8-4745-ad7a-230fa66bfe62" />
 
 **Features:**
 - Browse indexed files and folders
@@ -338,7 +338,7 @@ Access file browsing and indexing controls (when available).
 
 Link to advanced multi-agent orchestration features.
 
-![Studio Button - Screenshot should show: "Studio" button in header with orchestration icon, button highlighted]
+<img width="521" height="406" alt="image" src="https://github.com/user-attachments/assets/6d5aa66c-ac87-4c75-ac44-66085ee5bf28" />
 
 **Access:**
 - Click "Studio" button in header
@@ -423,23 +423,9 @@ Efficient navigation and controls for power users.
 - Check embeddings service available
 - Ensure semantic search enabled in config
 
-### Debug Mode
-
-Enable chatmode "Debug" for detailed troubleshooting assistance:
-
-![Debug Mode - Screenshot should show: Chatmode dropdown with "Debug" selected, assistant providing detailed technical response with error codes and stack traces]
-
-**Debug Mode Features:**
-- Verbose technical explanations
-- Error code analysis
-- Stack trace interpretation
-- Diagnostic suggestions
-
 ### Browser Console
 
 Check browser developer tools for detailed error messages.
-
-![Browser Console - Screenshot should show: Chrome/Firefox DevTools console open, showing Mimir API logs, semantic search messages, and any error messages]
 
 **Useful Console Messages:**
 - `🔍 Performing semantic search...` - RAG search started
