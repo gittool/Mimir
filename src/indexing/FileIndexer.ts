@@ -119,7 +119,7 @@ export class FileIndexer {
       // Large files: Store embeddings in FileChunk nodes
       const fileResult = await session.run(`
         MERGE (f:File:Node {path: $path})
-        ON CREATE SET f.id = 'file-' + toString(timestamp())
+        ON CREATE SET f.id = 'file-' + toString(timestamp()) + '-' + substring(randomUUID(), 0, 8)
         SET 
           f.absolute_path = $absolute_path,
           f.name = $name,

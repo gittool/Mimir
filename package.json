@@ -57,6 +57,7 @@
     "embeddings:reset": "node scripts/check-and-reset-embeddings.js --reset",
     "embeddings:force-reset": "node scripts/check-and-reset-embeddings.js --force",
     "embeddings:clear": "node scripts/check-and-reset-embeddings.js --reset --clear-only",
+    "embeddings:generate": "node scripts/check-and-reset-embeddings.js --generate-missing",
     "models:find": "node scripts/find-ollama-models.js",
     "llama:build": "./scripts/build-llama-cpp.sh",
     "llama:build-mxbai": "./scripts/build-llama-cpp-mxbai.sh",

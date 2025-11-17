@@ -20,8 +20,9 @@ export class WatchConfigManager {
       const now = new Date().toISOString();
       
       const result = await session.run(`
-        CREATE (w:WatchConfig {
+        CREATE (w:WatchConfig:Node {
           id: $id,
+          type: 'watchConfig',
           path: $path,
           recursive: $recursive,
           debounce_ms: $debounce_ms,

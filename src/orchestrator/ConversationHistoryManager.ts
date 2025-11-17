@@ -163,8 +163,9 @@ export class ConversationHistoryManager {
 
       // Store message in Neo4j
       await session.run(`
-        CREATE (m:ConversationMessage {
+        CREATE (m:ConversationMessage:Node {
           id: $id,
+          type: 'conversation_message',
           sessionId: $sessionId,
           role: $role,
           content: $content,

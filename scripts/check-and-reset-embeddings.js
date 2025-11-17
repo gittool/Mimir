@@ -14,12 +14,14 @@
  *   npm run embeddings:reset                                      # Reset and regenerate embeddings
  *   npm run embeddings:force-reset                                # Force reset without asking
  *   npm run embeddings:clear                                      # Clear embeddings without regenerating
+ *   npm run embeddings:generate-missing                           # Generate embeddings only for items without them
  * 
  * Usage (direct):
  *   node scripts/check-and-reset-embeddings.js                    # Check only
  *   node scripts/check-and-reset-embeddings.js --reset            # Reset and regenerate embeddings
  *   node scripts/check-and-reset-embeddings.js --force            # Force reset without asking
  *   node scripts/check-and-reset-embeddings.js --reset --clear-only  # Clear embeddings without regenerating
+ *   node scripts/check-and-reset-embeddings.js --generate-missing # Generate embeddings only for items without them
  */
 
 import neo4j from 'neo4j-driver';
@@ -46,6 +48,7 @@ const args = process.argv.slice(2);
 const shouldReset = args.includes('--reset') || args.includes('--force');
 const forceReset = args.includes('--force');
 const clearOnly = args.includes('--clear-only');
+const generateMissing = args.includes('--generate-missing');
 
 /**
  * Prompt user for confirmation
@@ -105,9 +108,9 @@ async function checkExistingEmbeddings(session) {
   console.log('\n🔍 Checking existing embeddings...');
   
   try {
-    // Count nodes with embeddings
+    // Count nodes with embeddings (any label)
     const countResult = await session.run(`
-      MATCH (n:Node)
+      MATCH (n)
       WHERE n.embedding IS NOT NULL
       RETURN count(n) as count
     `);
@@ -120,13 +123,14 @@ async function checkExistingEmbeddings(session) {
       return { count: 0, models: [], dimensions: [] };
     }
     
-    // Get embedding statistics
+    // Get embedding statistics (any label)
     const statsResult = await session.run(`
-      MATCH (n:Node)
+      MATCH (n)
       WHERE n.embedding IS NOT NULL
       RETURN 
         n.embedding_model as model,
         n.embedding_dimensions as dimensions,
+        size(n.embedding) as actualDims,
         count(n) as count
       ORDER BY count DESC
     `);
@@ -139,8 +143,11 @@ async function checkExistingEmbeddings(session) {
     statsResult.records.forEach(record => {
       const model = record.get('model') || 'unknown';
       const dimsValue = record.get('dimensions');
-      // Handle both Neo4j Integer and regular number
-      const dims = dimsValue ? (typeof dimsValue === 'object' && dimsValue.toNumber ? dimsValue.toNumber() : dimsValue) : null;
+      const actualDimsValue = record.get('actualDims');
+      // Prefer stored dimensions, fall back to actual size of embedding array
+      const dims = dimsValue 
+        ? (typeof dimsValue === 'object' && dimsValue.toNumber ? dimsValue.toNumber() : dimsValue)
+        : (actualDimsValue ? (typeof actualDimsValue === 'object' && actualDimsValue.toNumber ? actualDimsValue.toNumber() : actualDimsValue) : null);
       const countValue = record.get('count');
       const count = typeof countValue === 'object' && countValue.toNumber ? countValue.toNumber() : countValue;
       
@@ -165,9 +172,11 @@ async function checkChunkEmbeddings(session) {
   
   try {
     const result = await session.run(`
-      MATCH (n:Node)-[:HAS_CHUNK]->(c:Chunk)
+      MATCH (n)-[:HAS_CHUNK]->(c:FileChunk)
       WHERE c.embedding IS NOT NULL
-      RETURN count(c) as count, c.embedding_dimensions as dimensions
+      RETURN count(c) as count, 
+             c.embedding_dimensions as dimensions,
+             size(c.embedding) as actualDims
       LIMIT 1
     `);
     
@@ -239,18 +248,21 @@ async function findMismatchedNodes(session) {
   
   try {
     const result = await session.run(`
-      MATCH (n:Node)
+      MATCH (n)
       WHERE n.embedding IS NOT NULL 
         AND (n.embedding_dimensions IS NULL 
              OR n.embedding_dimensions <> $configuredDims
-             OR n.embedding_model <> $configuredModel)
+             OR n.embedding_model IS NULL
+             OR n.embedding_model <> $configuredModel
+             OR size(n.embedding) <> $configuredDims)
       RETURN n.id as id, 
              n.type as type, 
              n.title as title, 
              n.content as content, 
              n.text as text,
              n.embedding_dimensions as currentDims,
-             n.embedding_model as currentModel
+             n.embedding_model as currentModel,
+             size(n.embedding) as actualDims
       ORDER BY n.type, n.id
     `, { 
       configuredDims: CONFIGURED_DIMENSIONS,
@@ -282,6 +294,120 @@ async function findMismatchedNodes(session) {
   } catch (error) {
     console.error('❌ Error finding mismatched nodes:', error.message);
     throw error;
+  }
+}
+
+/**
+ * Find nodes without embeddings
+ */
+async function findNodesWithoutEmbeddings(session) {
+  console.log('\n🔍 Finding nodes and chunks without embeddings...');
+  
+  // Find both regular nodes and FileChunks without embeddings
+  const result = await session.run(`
+    MATCH (n)
+    WHERE (n.type IS NOT NULL OR n:FileChunk)
+      AND (n.embedding IS NULL OR size(n.embedding) = 0)
+      AND (n.content IS NOT NULL OR n.text IS NOT NULL)
+    RETURN n.id as id, 
+           labels(n)[0] as type, 
+           coalesce(n.content, n.text) as content
+    LIMIT 10000
+  `);
+  
+  const nodes = result.records.map(record => ({
+    id: record.get('id'),
+    type: record.get('type'),
+    content: record.get('content')
+  }));
+  
+  console.log(`   Found ${nodes.length} nodes without embeddings`);
+  return nodes;
+}
+
+/**
+ * Generate embeddings for nodes that don't have them
+ */
+async function generateMissingEmbeddings(session) {
+  console.log('\n🔄 Generating missing embeddings...');
+  
+  // Initialize embeddings service
+  const embeddingsService = new EmbeddingsService();
+  await embeddingsService.initialize();
+  
+  if (!embeddingsService.isEnabled()) {
+    console.error('❌ Embeddings service is not enabled. Check your configuration.');
+    throw new Error('Embeddings service not enabled');
+  }
+  
+  // Find nodes without embeddings
+  const nodes = await findNodesWithoutEmbeddings(session);
+  
+  if (nodes.length === 0) {
+    console.log('   ✅ All nodes already have embeddings');
+    return;
+  }
+  
+  console.log(`   Model: ${CONFIGURED_MODEL}`);
+  console.log(`   Dimensions: ${CONFIGURED_DIMENSIONS}`);
+  console.log(`   Processing ${nodes.length} nodes...`);
+  
+  let processed = 0;
+  let errors = 0;
+  
+  for (const node of nodes) {
+    try {
+      if (!node.content) continue;
+      
+      // Generate embedding
+      const embeddingResult = await embeddingsService.generateEmbedding(node.content);
+      
+      // Extract just the embedding array if it's wrapped in an object
+      const embedding = Array.isArray(embeddingResult) 
+        ? embeddingResult 
+        : (embeddingResult.embedding || embeddingResult);
+      
+      // Verify it's an array of numbers
+      if (!Array.isArray(embedding) || embedding.length === 0) {
+        throw new Error(`Invalid embedding format: expected array, got ${typeof embedding}`);
+      }
+      
+      // Update node with embedding
+      await session.run(
+        `MATCH (n {id: $id})
+         SET n.embedding = $embedding`,
+        { id: node.id, embedding }
+      );
+      
+      processed++;
+      if (processed % 10 === 0) {
+        console.log(`   Progress: ${processed}/${nodes.length}`);
+      }
+    } catch (error) {
+      errors++;
+      console.error(`   ⚠️  Failed for node ${node.id} (${node.type}): ${error.message}`);
+    }
+  }
+  
+  console.log(`\n✅ Generated embeddings for ${processed} nodes (${errors} errors)`);
+  
+  // Verify embeddings were stored
+  console.log('\n🔍 Verifying embeddings in database...');
+  const verifyResult = await session.run(`
+    MATCH (n)
+    WHERE n.embedding IS NOT NULL
+    RETURN count(n) as total,
+           avg(size(n.embedding)) as avgDimensions,
+           min(size(n.embedding)) as minDimensions,
+           max(size(n.embedding)) as maxDimensions
+  `);
+  
+  const verify = verifyResult.records[0];
+  console.log(`   Total nodes with embeddings: ${verify.get('total')}`);
+  console.log(`   Embedding dimensions: min=${verify.get('minDimensions')}, max=${verify.get('maxDimensions')}, avg=${Math.round(verify.get('avgDimensions'))}`);
+  
+  if (errors > 0) {
+    console.log(`\n⚠️  ${errors} nodes failed to generate embeddings`);
   }
 }
 
@@ -332,6 +458,16 @@ async function regenerateEmbeddings(session, nodes) {
       // Generate new embedding
       const embeddingResult = await embeddingsService.generateEmbedding(textContent);
       
+      // Extract just the embedding array if it's wrapped in an object
+      const embedding = Array.isArray(embeddingResult) 
+        ? embeddingResult 
+        : (embeddingResult.embedding || embeddingResult);
+      
+      // Verify it's an array of numbers
+      if (!Array.isArray(embedding) || embedding.length === 0) {
+        throw new Error(`Invalid embedding format: expected array, got ${typeof embedding}`);
+      }
+      
       // Update node with new embedding
       await session.run(`
         MATCH (n:Node {id: $id})
@@ -342,9 +478,9 @@ async function regenerateEmbeddings(session, nodes) {
         REMOVE n.needs_embedding
       `, {
         id: node.id,
-        embedding: embeddingResult.embedding,
-        model: embeddingResult.model,
-        dimensions: embeddingResult.dimensions
+        embedding: embedding,
+        model: embeddingResult.model || CONFIGURED_MODEL,
+        dimensions: embedding.length
       });
       
       console.log(`          ✅ Updated (${embeddingResult.dimensions} dims)`);
@@ -396,9 +532,9 @@ async function resetEmbeddingSpace(session, regenerate = true) {
     
     if (!regenerate) {
       // Step 3a: Clear embeddings from nodes (if not regenerating)
-      console.log('\n3️⃣  Clearing embeddings from nodes...');
+      console.log('\n3️⃣  Clearing embeddings from nodes (any label)...');
       const nodeResult = await session.run(`
-        MATCH (n:Node)
+        MATCH (n)
         WHERE n.embedding IS NOT NULL
         REMOVE n.embedding, n.embedding_model, n.embedding_dimensions, n.has_embedding
         RETURN count(n) as count
@@ -408,9 +544,9 @@ async function resetEmbeddingSpace(session, regenerate = true) {
       console.log(`   ✅ Cleared embeddings from ${nodeCount} nodes`);
       
       // Step 4: Clear embeddings from chunks
-      console.log('\n4️⃣  Clearing embeddings from chunks...');
+      console.log('\n4️⃣  Clearing embeddings from FileChunks...');
       const chunkResult = await session.run(`
-        MATCH (c:Chunk)
+        MATCH (c:FileChunk)
         WHERE c.embedding IS NOT NULL
         REMOVE c.embedding, c.embedding_model, c.embedding_dimensions
         RETURN count(c) as count
@@ -458,6 +594,14 @@ async function main() {
   const session = driver.session();
   
   try {
+    // Handle generate-missing mode separately
+    if (generateMissing) {
+      console.log('\n📝 Generate Missing Mode: Will only generate embeddings for items without them\n');
+      await generateMissingEmbeddings(session);
+      console.log('\n✅ Done!');
+      return;
+    }
+    
     // Check current state
     const indexInfo = await checkVectorIndex(session);
     const embeddingsInfo = await checkExistingEmbeddings(session);
@@ -466,15 +610,20 @@ async function main() {
     // Analyze mismatches
     const mismatches = analyzeMismatches(indexInfo, embeddingsInfo, chunksInfo);
     
-    if (mismatches.length === 0) {
+    // If force or clear-only is set, proceed regardless of mismatches
+    if (!forceReset && !shouldReset && mismatches.length === 0) {
       console.log('\n✅ All embeddings match configured dimensions. No action needed.');
       return;
     }
     
-    // Report mismatches
-    console.log('\n⚠️  Mismatches detected:');
-    for (const m of mismatches) {
-      console.log(`   - ${m}`);
+    // Report mismatches (if any)
+    if (mismatches.length > 0) {
+      console.log('\n⚠️  Mismatches detected:');
+      for (const m of mismatches) {
+        console.log(`   - ${m}`);
+      }
+    } else if (forceReset || shouldReset) {
+      console.log('\n✅ No mismatches detected, but proceeding with reset as requested...');
     }
     
     // Decide whether to reset
