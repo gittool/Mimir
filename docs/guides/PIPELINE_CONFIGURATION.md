@@ -288,17 +288,17 @@ SEMANTIC_SEARCH_LIMIT: int = 10
 
 ```python
 # LLM Backend
-LLM_BACKEND: str = "copilot"       # "copilot" or "ollama"
+MIMIR_DEFAULT_PROVIDER: str = "copilot"       # "openai", "copilot", or "ollama"
 
 # Model Selection
-DEFAULT_MODEL: str = "gpt-4.1"
+MIMIR_DEFAULT_MODEL: str = "gpt-4.1"
 
 # Semantic Search
 SEMANTIC_SEARCH_ENABLED: bool = True
 SEMANTIC_SEARCH_LIMIT: int = 10
 
 # Embedding Configuration
-EMBEDDING_MODEL: str = "nomic-embed-text"
+MIMIR_EMBEDDINGS_MODEL: str = "mxbai-embed-large"
 ```
 
 **Usage**:

@@ -86,11 +86,11 @@ const DEFAULT_CONFIG: ChatConfig = {
   semanticSearchEnabled: true,
   semanticSearchLimit: 10,
   minSimilarityThreshold: 0.55,
-  llmProvider: normalizeProvider(process.env.LLM_PROVIDER || process.env.MIMIR_DEFAULT_PROVIDER || 'ollama').toString(),
+  llmProvider: normalizeProvider(process.env.MIMIR_DEFAULT_PROVIDER || 'ollama').toString(),
   // Base URL only - LangChain clients add their own paths
   llmApiUrl: process.env.MIMIR_LLM_API || 'http://ollama:11434',
-  defaultModel: process.env.DEFAULT_MODEL || process.env.MIMIR_DEFAULT_MODEL || 'qwen3:4b',
-  embeddingModel: process.env.EMBEDDING_MODEL || process.env.MIMIR_EMBEDDINGS_MODEL || 'mxbai-embed-large',
+  defaultModel: process.env.MIMIR_DEFAULT_MODEL || 'qwen3:4b',
+  embeddingModel: process.env.MIMIR_EMBEDDINGS_MODEL || 'mxbai-embed-large',
 };
 
 /**
@@ -242,10 +242,10 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
    * 
    * **Provider Switching:**
    * Configure via environment variables:
-   * - LLM_PROVIDER → 'openai' (OpenAI-compatible endpoint) or 'ollama' (local Ollama)
-   * - LLM_API_URL → Base URL for the LLM endpoint (e.g., http://copilot-api:4141/v1)
-   * - DEFAULT_MODEL → Model name (e.g., gpt-4o for OpenAI, qwen2.5-coder for Ollama)
-   * - EMBEDDING_MODEL → Embedding model (default: nomic-embed-text)
+   * - MIMIR_DEFAULT_PROVIDER → 'openai' (OpenAI-compatible endpoint) or 'ollama' (local Ollama)
+   * - MIMIR_LLM_API → Base URL for the LLM endpoint (e.g., http://copilot-api:4141)
+   * - MIMIR_DEFAULT_MODEL → Model name (e.g., gpt-4o for OpenAI, qwen2.5-coder for Ollama)
+   * - MIMIR_EMBEDDINGS_MODEL → Embedding model (default: mxbai-embed-large)
    * 
    * **MCP Tools:**
    * All providers support full MCP tool calling through LangChain agents.
@@ -255,13 +255,13 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
    * **Examples:**
    * ```bash
    * # Use OpenAI-compatible endpoint (copilot-api)
-   * LLM_PROVIDER=openai LLM_API_URL=http://copilot-api:4141/v1 DEFAULT_MODEL=gpt-4o
+   * MIMIR_DEFAULT_PROVIDER=openai MIMIR_LLM_API=http://copilot-api:4141 MIMIR_DEFAULT_MODEL=gpt-4o
    * 
    * # Use local Ollama
-   * LLM_PROVIDER=ollama LLM_API_URL=http://localhost:11434 DEFAULT_MODEL=qwen2.5-coder
+   * MIMIR_DEFAULT_PROVIDER=ollama MIMIR_LLM_API=http://localhost:11434 MIMIR_DEFAULT_MODEL=qwen2.5-coder
    * 
    * # Use actual OpenAI API
-   * LLM_PROVIDER=openai LLM_API_URL=https://api.openai.com/v1 DEFAULT_MODEL=gpt-4-turbo
+   * MIMIR_DEFAULT_PROVIDER=openai MIMIR_LLM_API=https://api.openai.com MIMIR_DEFAULT_MODEL=gpt-4-turbo
    * ```
    */
   router.post('/v1/chat/completions', async (req: any, res: any) => {

@@ -62,7 +62,7 @@ fi
 
 # Add embedding model if vector embeddings are enabled (independent of agent provider)
 if [ "${MIMIR_FEATURE_VECTOR_EMBEDDINGS}" = "true" ] || [ "${MIMIR_EMBEDDINGS_ENABLED}" = "true" ]; then
-  EMBEDDING_MODEL="${MIMIR_EMBEDDINGS_MODEL:-nomic-embed-text}"
+  EMBEDDING_MODEL="${MIMIR_EMBEDDINGS_MODEL:-mxbai-embed-large}"
   MODELS+=("$EMBEDDING_MODEL")
   echo "🧮 Vector embeddings enabled - will also install: $EMBEDDING_MODEL"
 fi

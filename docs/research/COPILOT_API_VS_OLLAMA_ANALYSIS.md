@@ -274,13 +274,14 @@ export class CopilotAgentClient {
 
 **4. Environment Variables** (`.env` or `docker-compose.yml`):
 
+> **⚠️ Note**: This analysis document uses historical ENV vars. Current variable names are `MIMIR_*` namespaced (see README.md for current configuration).
+
 ```bash
-# LLM Provider Configuration
-LLM_PROVIDER=ollama                    # Default: ollama
-LLM_MODEL=tinyllama                    # Default model for provider
-OLLAMA_BASE_URL=http://ollama:11434    # Docker service name
-COPILOT_BASE_URL=http://localhost:4141/v1
-OPENAI_API_KEY=                        # Optional
+# LLM Provider Configuration (current naming)
+MIMIR_DEFAULT_PROVIDER=ollama          # Default: ollama
+MIMIR_DEFAULT_MODEL=tinyllama          # Default model for provider
+MIMIR_LLM_API=http://ollama:11434     # Docker service name
+MIMIR_LLM_API_KEY=                     # Optional (for OpenAI)
 ```
 
 **5. Setup Script Update** (`scripts/setup.sh`):

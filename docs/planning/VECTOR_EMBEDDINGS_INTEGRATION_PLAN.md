@@ -142,10 +142,14 @@ interface GraphNode {
 ```
 
 **Environment Variables** (docker-compose.yml):
+
+> **⚠️ Note**: This planning document uses historical ENV vars. Current variable names are `MIMIR_*` namespaced (see README.md for current configuration).
+
 ```bash
-OLLAMA_BASE_URL=http://ollama:11434
-EMBEDDING_MODEL=nomic-embed-text
-EMBEDDING_DIMENSION=512
+# Current naming
+MIMIR_EMBEDDINGS_API=http://ollama:11434
+MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large  # Current default (was: nomic-embed-text)
+MIMIR_EMBEDDINGS_DIMENSIONS=1024          # Current default (was: 512)
 VECTOR_INDEX_NAME=node_embeddings
 ```
 
