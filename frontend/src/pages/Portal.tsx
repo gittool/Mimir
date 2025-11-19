@@ -172,6 +172,7 @@ export function Portal() {
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
   const [selectedPreamble, setSelectedPreamble] = useState('limerick');
   const [availablePreambles, setAvailablePreambles] = useState<Preamble[]>([]);
+  const [preambleCache, setPreambleCache] = useState<Record<string, string>>({});
   const [showCustomPreambleModal, setShowCustomPreambleModal] = useState(false);
   const [customPreambleText, setCustomPreambleText] = useState('');
   const [customPreambleContent, setCustomPreambleContent] = useState<string | null>(null);
@@ -269,6 +270,31 @@ export function Portal() {
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [input]);
+
+  /**
+   * Fetches preamble content from server and caches it
+   */
+  const fetchPreambleContent = async (preambleName: string): Promise<string> => {
+    // Check cache first
+    if (preambleCache[preambleName]) {
+      return preambleCache[preambleName];
+    }
+
+    try {
+      const response = await fetch(`/api/preambles/${preambleName}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch preamble: ${response.status}`);
+      }
+      const content = await response.text();
+      
+      // Cache for future use
+      setPreambleCache(prev => ({ ...prev, [preambleName]: content }));
+      return content;
+    } catch (error) {
+      console.error(`Error fetching preamble '${preambleName}':`, error);
+      throw error;
+    }
+  };
 
   /**
    * Opens the custom preamble modal dialog for editing.
@@ -575,12 +601,24 @@ export function Portal() {
 
     // Re-send the conversation from this point
     try {
-      // Build messages array - include custom preamble as system message if selected
+      // Build messages array - fetch and include preamble as system message
       const messagesPayload: any[] = [];
       
+      // Fetch preamble content (either custom or from server)
+      let preambleContent: string;
       if (selectedPreamble === 'custom' && customPreambleContent) {
-        messagesPayload.push({ role: 'system', content: customPreambleContent });
+        preambleContent = customPreambleContent;
+      } else {
+        try {
+          preambleContent = await fetchPreambleContent(selectedPreamble);
+        } catch (error) {
+          console.error('Failed to fetch preamble, using minimal default');
+          preambleContent = 'You are a helpful AI assistant.';
+        }
       }
+      
+      // Always inject preamble as system message
+      messagesPayload.push({ role: 'system', content: preambleContent });
       
       // Add all previous messages in conversation history
       for (const msg of messagesUpToEdit) {
@@ -602,7 +640,6 @@ export function Portal() {
         body: JSON.stringify({
           messages: messagesPayload,
           model: selectedModel,
-          preamble: selectedPreamble === 'custom' ? undefined : selectedPreamble,
           stream: true,
           enable_tools: true, // Explicitly enable tool calling
         }),
@@ -876,13 +913,24 @@ export function Portal() {
     setIsLoading(true);
 
     try {
-      // Build messages array - include custom preamble as system message if selected
+      // Build messages array - fetch and include preamble as system message
       const messagesPayload: any[] = [];
       
+      // Fetch preamble content (either custom or from server)
+      let preambleContent: string;
       if (selectedPreamble === 'custom' && customPreambleContent) {
-        // User has custom preamble - add as system message
-        messagesPayload.push({ role: 'system', content: customPreambleContent });
+        preambleContent = customPreambleContent;
+      } else {
+        try {
+          preambleContent = await fetchPreambleContent(selectedPreamble);
+        } catch (error) {
+          console.error('Failed to fetch preamble, using minimal default');
+          preambleContent = 'You are a helpful AI assistant.';
+        }
       }
+      
+      // Always inject preamble as system message
+      messagesPayload.push({ role: 'system', content: preambleContent });
       
       // Add user message
       messagesPayload.push({ role: 'user', content: currentInput });
@@ -896,7 +944,6 @@ export function Portal() {
         body: JSON.stringify({
           messages: messagesPayload,
           model: selectedModel,
-          preamble: selectedPreamble === 'custom' ? undefined : selectedPreamble, // Only send preamble name if not custom
           stream: true,
           enable_tools: true, // Explicitly enable tool calling
         }),

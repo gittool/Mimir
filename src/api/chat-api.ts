@@ -44,15 +44,29 @@ interface ChatMessage {
 
 /**
  * Chat completion request body
+ * 
+ * NOTE: Preambles/chatmodes are now handled client-side!
+ * Clients should fetch preamble content from GET /api/preambles/:name
+ * and inject it as a system message: { role: 'system', content: preambleContent }
  */
 interface ChatCompletionRequest {
   messages: ChatMessage[];
   model?: string;
   stream?: boolean;
-  preamble?: string; // Chatmode/preamble name (e.g., 'mimir-v2', 'debug', 'research')
   enable_tools?: boolean; // Enable MCP tool calling (default: true)
   tools?: string[]; // Specific tools to enable (optional)
   max_tool_calls?: number; // Max tool calls per response (default: 3)
+  tool_parameters?: {
+    vector_search_nodes?: {
+      limit?: number;           // Max results (default: 10)
+      min_similarity?: number;  // Similarity threshold 0-1 (default: 0.5)
+      depth?: number;           // Graph traversal depth 1-3 (default: 1)
+      types?: string[];         // Filter by node types
+    };
+    memory_edge?: {
+      depth?: number;           // Subgraph traversal depth (default: 1)
+    };
+  };
 }
 
 /**
@@ -159,6 +173,22 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
   });
 
   /**
+   * GET /api/preambles/:name
+   * Get specific preamble content by name
+   * Returns the full markdown content for client-side system message injection
+   */
+  router.get('/api/preambles/:name', async (req: any, res: any) => {
+    try {
+      const { name } = req.params;
+      const content = await loadPreamble(name);
+      res.type('text/markdown').send(content);
+    } catch (error: any) {
+      console.error(`Error loading preamble '${name}':`, error);
+      res.status(404).json({ error: `Preamble '${name}' not found` });
+    }
+  });
+
+  /**
    * GET /api/tools
    * List available MCP tools for the agent
    */
@@ -237,7 +267,7 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
   router.post('/v1/chat/completions', async (req: any, res: any) => {
     try {
       const body: ChatCompletionRequest = req.body;
-      const { messages, stream = true, preamble, enable_tools = true, tools: requestedTools, max_tool_calls = 3 } = body;
+      const { messages, model, stream = true, enable_tools = true, tools: requestedTools, max_tool_calls = 3, tool_parameters } = body;
 
       if (!messages || messages.length === 0) {
         return res.status(400).json({ error: 'No messages provided' });
@@ -253,32 +283,31 @@ export function createChatRouter(graphManager: IGraphManager): express.Router {
 
       console.log(`\n💬 Chat request: ${userMessage.substring(0, 100)}...`);
       console.log(`📨 Incoming messages: ${messages.length} (${messages.map(m => m.role).join(', ')})`);
+      
+      // Check if system prompt provided
+      const hasSystemPrompt = messages.some(m => m.role === 'system');
+      console.log(`🎭 System prompt: ${hasSystemPrompt ? 'Provided by client' : '⚠️  None (client should send preamble as system message)'}`);
+      
       if (enable_tools) {
         console.log(`🔧 Tools enabled (max calls: ${max_tool_calls})`);
-      }
-
-      // Check if user already provided a system prompt
-      const hasSystemPrompt = messages.some(m => m.role === 'system');
-      
-      // Only load Claudette preamble if no system prompt provided
-      let activePreamble: string | null = null;
-      if (!hasSystemPrompt) {
-        console.log(`🎭 No system prompt provided, loading chatmode: ${preamble || 'mimir-v2'}`);
-        activePreamble = await loadPreamble(preamble);
-      } else {
-        console.log(`✅ Using system prompt from request`);
+        if (tool_parameters) {
+          console.log(`⚙️  Tool parameters:`, JSON.stringify(tool_parameters, null, 2));
+          if (tool_parameters.vector_search_nodes?.depth) {
+            console.log(`   📊 Vector search depth: ${tool_parameters.vector_search_nodes.depth} (multi-hop enabled)`);
+          }
+        }
       }
 
       // Get model from request or use default
       // Note: Do NOT split on '.' as gpt-4.1 is a version number, not a provider prefix
-      let selectedModel = body.model || config.defaultModel;
+      let selectedModel = model || config.defaultModel;
       
       // Only clean up if it has a provider prefix (e.g., 'mimir:model-name')
       if (selectedModel.startsWith('mimir:')) {
         selectedModel = selectedModel.replace('mimir:', '');
       }
       
-      console.log(`📋 Using model: ${selectedModel}`);
+      console.log(`📋 Using model: ${selectedModel} ${model ? '(from request)' : '(default)'}`);
 
       // Prepare tools for agent (filter if specific tools requested)
       const agentTools = enable_tools 
@@ -484,10 +513,13 @@ ${relevantContext}
         temperature: 0.7,
       });
 
-      // Load preamble (use system prompt if provided, otherwise Claudette preamble)
-      const systemContent = hasSystemPrompt 
-        ? messages.find(m => m.role === 'system')?.content || activePreamble!
-        : activePreamble!;
+      // Get system prompt from messages (client is responsible for providing preamble)
+      const systemMessage = messages.find(m => m.role === 'system');
+      const systemContent = systemMessage?.content || 'You are a helpful AI assistant with access to a graph-based knowledge system.';
+      
+      if (!systemMessage) {
+        console.warn('⚠️  No system message provided by client. Using minimal default. Consider fetching preamble from /api/preambles/:name');
+      }
       
       await agent.loadPreamble(systemContent, true); // true = load as content, not file path
 

@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc",
     "build:frontend": "npm run build --workspace=frontend",
-    "build:all": "npm run build && npm run build:frontend",
+    "build:vscode": "npm run compile --workspace=vscode-extension",
+    "build:all": "npm run build && npm run build:frontend && npm run build:vscode",
     "build:docker": "npm run build:all && node ./scripts/build-docker.js",
     "help": "node ./scripts/start.js help",
     "start": "node ./scripts/start.js up",
@@ -112,6 +113,7 @@
     "node": ">=22"
   },
   "workspaces": [
-    "frontend"
+    "frontend",
+    "vscode-extension"
   ]
 }

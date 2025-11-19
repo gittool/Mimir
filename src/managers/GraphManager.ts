@@ -541,13 +541,14 @@ export class GraphManager implements IGraphManager {
     const session = this.driver.session();
     try {
       const now = new Date().toISOString();
+      // Flatten properties at top level (Neo4j doesn't support nested objects in relationships)
       const edgesWithIds = edges.map(e => ({
         id: `edge-${++this.edgeCounter}-${Date.now()}`,
         source: e.source,
         target: e.target,
         type: e.type,
-        properties: flattenForMCP(e.properties || {}),
-        created: now
+        created: now,
+        ...flattenForMCP(e.properties || {})  // Spread flattened user properties at top level
       }));
 
       const result = await session.run(
@@ -555,12 +556,8 @@ export class GraphManager implements IGraphManager {
         UNWIND $edges as edge
         MATCH (s:Node {id: edge.source})
         MATCH (t:Node {id: edge.target})
-        CREATE (s)-[e:EDGE {
-          id: edge.id,
-          type: edge.type,
-          properties: edge.properties,
-          created: edge.created
-        }]->(t)
+        CREATE (s)-[e:EDGE]->(t)
+        SET e = edge
         RETURN e, edge.source as source, edge.target as target
         `,
         { edges: edgesWithIds }

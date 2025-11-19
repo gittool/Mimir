@@ -5,28 +5,29 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
 
-# Copy package files (both root and workspace)
+# Copy package files for all workspaces (better caching - these change less frequently)
 COPY package*.json ./
 COPY frontend/package*.json ./frontend/
+COPY vscode-extension/package*.json ./vscode-extension/
 
-# Install ALL dependencies (including dev deps for building)
-# Single npm install handles both root and workspace (frontend)
-# Remove package-lock.json to avoid any auth issues
-# Use --legacy-peer-deps to handle peer dependency conflicts (zod v3 vs v4)
-RUN rm -f package-lock.json && \
-    npm config set registry https://registry.npmjs.org/ && \
-    npm config delete //registry.npmjs.org/:_authToken || true && \
-    npm install --legacy-peer-deps --no-audit --no-fund
+# Install dependencies using npm ci (much faster than npm install)
+# npm ci uses package-lock.json exactly and is optimized for CI/CD
+# Use BuildKit cache mount to persist npm cache between builds
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --legacy-peer-deps --no-audit --no-fund
 
-# Copy source and build both backend and frontend
+# Copy source code (do this AFTER npm install for better layer caching)
 COPY . .
-# Remove any local node_modules that might have been copied, then rebuild
-RUN rm -rf frontend/node_modules/esbuild && \
-    npm install esbuild@0.21.5 --workspace=frontend --legacy-peer-deps && \
-    npm run build && npm run build --workspace=frontend
 
-# Remove dev dependencies after build
-# RUN npm prune --omit=dev
+# Build backend only (frontend should be pre-built locally)
+RUN npm run build
+
+# Copy pre-built frontend from local machine (build with: npm run build:frontend)
+# This avoids Alpine ARM64 rollup optional dependency issues
+COPY frontend/dist ./frontend/dist
+
+# Remove dev dependencies after build to reduce final image size
+RUN npm prune --omit=dev --legacy-peer-deps
 
 # Final runtime image
 FROM node:22-alpine AS production
@@ -34,24 +35,21 @@ FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Install runtime dependencies (curl for environment validation)
+# Install runtime dependencies (curl for health checks)
 RUN apk add --no-cache curl
 
-# Copy only build artifacts and production deps with correct ownership
-# Using --chown during COPY is much faster than RUN chown -R (avoids 100+ second delay)
+# Copy only necessary files from builder with correct ownership
+# Using --chown during COPY is much faster than RUN chown
 COPY --chown=node:node --from=builder /app/build ./build
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/package*.json ./
 COPY --chown=node:node --from=builder /app/docs ./docs
 COPY --chown=node:node --from=builder /app/frontend/dist ./frontend/dist
 
-# Switch to non-root user (files already owned by node:node from COPY --chown)
+# Switch to non-root user for security
 USER node
 
-# MCP server runs on stdio, no HTTP port needed
-# But we keep the port for potential future HTTP transport
-
-# Expose HTTP port for MCP server
+# Expose HTTP port
 EXPOSE 3000
 
 # Health check for HTTP endpoint
