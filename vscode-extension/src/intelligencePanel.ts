@@ -204,11 +204,15 @@ export class IntelligencePanel {
     if (hostWorkspaceRoot) {
       const normalizedHostRoot = path.normalize(hostWorkspaceRoot);
       
+      // Ensure root ends with separator to avoid false matches (e.g., /src matching /src-other)
+      const rootWithSep = normalizedHostRoot.endsWith(path.sep) ? normalizedHostRoot : normalizedHostRoot + path.sep;
+      
       // Check if the selected path is within the mounted workspace (case-insensitive on Windows)
       const pathToCheck = isWindows ? normalizedHostPath.toLowerCase() : normalizedHostPath;
-      const rootToCheck = isWindows ? normalizedHostRoot.toLowerCase() : normalizedHostRoot;
+      const rootToCheck = isWindows ? rootWithSep.toLowerCase() : rootWithSep;
       
-      if (!pathToCheck.startsWith(rootToCheck)) {
+      // Also allow exact match (root itself)
+      if (!pathToCheck.startsWith(rootToCheck) && pathToCheck !== (isWindows ? normalizedHostRoot.toLowerCase() : normalizedHostRoot)) {
         return {
           isValid: false,
           error: `Folder is outside the mounted workspace.\n\nMounted workspace: ${hostWorkspaceRoot} (expanded)\nSelected folder: ${hostPath}\n\nOnly folders within the mounted workspace can be indexed.`
@@ -238,11 +242,15 @@ export class IntelligencePanel {
     for (const folder of workspaceFolders) {
       const folderPath = path.normalize(folder.uri.fsPath);
       
+      // Ensure workspace path ends with separator to avoid false matches
+      const workspacePathWithSep = folderPath.endsWith(path.sep) ? folderPath : folderPath + path.sep;
+      
       // Case-insensitive comparison on Windows
       const pathToCheck = isWindows ? normalizedHostPath.toLowerCase() : normalizedHostPath;
-      const workspacePathToCheck = isWindows ? folderPath.toLowerCase() : folderPath;
+      const workspacePathToCheck = isWindows ? workspacePathWithSep.toLowerCase() : workspacePathWithSep;
       
-      if (pathToCheck.startsWith(workspacePathToCheck)) {
+      // Check if path starts with workspace path OR is exact match
+      if (pathToCheck.startsWith(workspacePathToCheck) || pathToCheck === (isWindows ? folderPath.toLowerCase() : folderPath)) {
         isWithinWorkspace = true;
         break;
       }

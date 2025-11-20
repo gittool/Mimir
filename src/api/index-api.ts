@@ -602,8 +602,14 @@ router.post('/api/migrate-file-paths', async (req: Request, res: Response) => {
 
         // Calculate host path
         let hostPath = containerPath;
-        if (hostWorkspaceRoot && containerPath.startsWith(workspaceRoot)) {
-          hostPath = containerPath.replace(workspaceRoot, hostWorkspaceRoot);
+        if (hostWorkspaceRoot) {
+          // Ensure root ends with separator to avoid false matches
+          const rootWithSep = workspaceRoot.endsWith('/') ? workspaceRoot : `${workspaceRoot}/`;
+          
+          // Check if path starts with root (with separator) or is exact match
+          if (containerPath.startsWith(rootWithSep) || containerPath === workspaceRoot) {
+            hostPath = containerPath.replace(workspaceRoot, hostWorkspaceRoot);
+          }
         }
 
         // Update the node
@@ -802,7 +808,11 @@ router.post('/migrate-watchconfig-paths', async (req: Request, res: Response) =>
         const containerWorkspaceRoot = process.env.WORKSPACE_ROOT || '/workspace';
         const hostWorkspaceRoot = process.env.HOST_WORKSPACE_ROOT || containerWorkspaceRoot;
         
-        if (containerPath.startsWith(containerWorkspaceRoot)) {
+        // Ensure root ends with separator to avoid false matches
+        const rootWithSep = containerWorkspaceRoot.endsWith('/') ? containerWorkspaceRoot : `${containerWorkspaceRoot}/`;
+        
+        // Check if path starts with root (with separator) or is exact match
+        if (containerPath.startsWith(rootWithSep) || containerPath === containerWorkspaceRoot) {
           return containerPath.replace(containerWorkspaceRoot, hostWorkspaceRoot);
         }
         
