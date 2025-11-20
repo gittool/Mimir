@@ -51,7 +51,6 @@ export interface LLMConfig {
   embeddings?: EmbeddingsConfig;
   features?: {
     pmModelSuggestions?: boolean;
-    vectorEmbeddings?: boolean;
   };
 }
 
@@ -108,11 +107,7 @@ export class LLMConfigLoader {
       console.log(`🔧 PM Model Suggestions: ${config.features.pmModelSuggestions}`);
     }
 
-    if (process.env.MIMIR_FEATURE_VECTOR_EMBEDDINGS !== undefined) {
-      config.features = config.features || {};
-      config.features.vectorEmbeddings = process.env.MIMIR_FEATURE_VECTOR_EMBEDDINGS === 'true';
-      console.log(`🔧 Vector Embeddings Feature: ${config.features.vectorEmbeddings}`);
-    }
+
 
     // Embeddings configuration
     if (process.env.MIMIR_EMBEDDINGS_ENABLED !== undefined) {
@@ -571,7 +566,7 @@ export class LLMConfigLoader {
 
   async isVectorEmbeddingsEnabled(): Promise<boolean> {
     const config = await this.load();
-    return config.features?.vectorEmbeddings === true && config.embeddings?.enabled === true;
+    return config.embeddings?.enabled === true;
   }
 
   async getEmbeddingsConfig(): Promise<EmbeddingsConfig | null> {

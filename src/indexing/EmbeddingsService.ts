@@ -42,7 +42,7 @@ const getMaxRetries = () => parseInt(process.env.MIMIR_EMBEDDINGS_MAX_RETRIES ||
 
 export class EmbeddingsService {
   private configLoader: LLMConfigLoader;
-  private enabled: boolean = false;
+  public enabled: boolean = false;
   private provider: string = 'ollama';
   private baseUrl: string = 'http://localhost:11434';
   private model: string = 'nomic-embed-text';
@@ -145,7 +145,7 @@ export class EmbeddingsService {
    */
   async generateEmbedding(text: string): Promise<EmbeddingResult> {
     if (!this.enabled) {
-      throw new Error('Embeddings not enabled. Set features.vectorEmbeddings=true in config');
+      throw new Error('Embeddings not enabled. Check embeddings.enabled in config');
     }
 
     if (!text || text.trim().length === 0) {
@@ -220,7 +220,7 @@ export class EmbeddingsService {
    */
   async generateChunkEmbeddings(text: string): Promise<ChunkEmbeddingResult[]> {
     if (!this.enabled) {
-      throw new Error('Embeddings not enabled. Set features.vectorEmbeddings=true in config');
+      throw new Error('Embeddings not enabled. Check embeddings.enabled in config');
     }
 
     if (!text || text.trim().length === 0) {

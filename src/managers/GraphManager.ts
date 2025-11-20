@@ -184,36 +184,135 @@ export class GraphManager implements IGraphManager {
   private extractTextContent(properties: Record<string, any>): string {
     const parts: string[] = [];
     
-    // Priority fields
-    if (properties.content && typeof properties.content === 'string') {
-      parts.push(properties.content);
-    }
-    if (properties.description && typeof properties.description === 'string') {
-      parts.push(properties.description);
-    }
+    // Priority fields first
     if (properties.title && typeof properties.title === 'string') {
-      parts.push(properties.title);
+      parts.push(`Title: ${properties.title}`);
     }
     if (properties.name && typeof properties.name === 'string') {
-      parts.push(properties.name);
+      parts.push(`Name: ${properties.name}`);
+    }
+    if (properties.description && typeof properties.description === 'string') {
+      parts.push(`Description: ${properties.description}`);
+    }
+    if (properties.content && typeof properties.content === 'string') {
+      parts.push(`Content: ${properties.content}`);
     }
     
-    // If we have priority fields, use those
-    if (parts.length > 0) {
-      return parts.join('\n\n');
-    }
+    // Now include ALL other properties (stringified)
+    const systemFields = new Set(['id', 'type', 'created', 'updated', 'title', 'name', 'description', 'content', 
+                                   'embedding', 'embedding_dimensions', 'embedding_model', 'has_embedding']);
     
-    // Otherwise, concatenate all string values
     for (const [key, value] of Object.entries(properties)) {
-      if (typeof value === 'string' && value.trim().length > 0) {
-        // Skip system fields
-        if (!['id', 'type', 'created', 'updated'].includes(key)) {
-          parts.push(value);
+      // Skip system fields and already-included fields
+      if (systemFields.has(key)) {
+        continue;
+      }
+      
+      // Skip null/undefined
+      if (value === null || value === undefined) {
+        continue;
+      }
+      
+      // Stringify the value
+      let stringValue: string;
+      if (typeof value === 'string') {
+        stringValue = value;
+      } else if (typeof value === 'number' || typeof value === 'boolean') {
+        stringValue = String(value);
+      } else if (Array.isArray(value)) {
+        stringValue = value.join(', ');
+      } else if (typeof value === 'object') {
+        try {
+          stringValue = JSON.stringify(value);
+        } catch {
+          stringValue = String(value);
         }
+      } else {
+        stringValue = String(value);
+      }
+      
+      if (stringValue.trim().length > 0) {
+        parts.push(`${key}: ${stringValue}`);
       }
     }
     
     return parts.join('\n');
+  }
+
+  /**
+   * Creates chunks for a node if content is large enough to warrant chunking
+   * Returns chunk data or null if content is small enough for a single embedding
+   */
+  private async createNodeChunks(
+    nodeId: string, 
+    textContent: string, 
+    session: any
+  ): Promise<{ chunkCount: number; totalChars: number } | null> {
+    const chunkSize = parseInt(process.env.MIMIR_EMBEDDINGS_CHUNK_SIZE || '768', 10);
+    
+    // If content is small, don't chunk - return null to signal single embedding
+    if (textContent.length <= chunkSize) {
+      return null;
+    }
+    
+    console.log(`📦 Creating chunks for node ${nodeId} (${textContent.length} chars)...`);
+    
+    try {
+      // Generate chunk embeddings
+      const chunks = await this.embeddingsService!.generateChunkEmbeddings(textContent);
+      
+      // Create chunk nodes and relationships
+      for (const chunk of chunks) {
+        const chunkId = `chunk-${nodeId}-${chunk.chunkIndex}`;
+        
+        await session.run(
+          `
+          MATCH (n:Node {id: $nodeId})
+          MERGE (c:NodeChunk:Node {id: $chunkId})
+          ON CREATE SET
+            c.chunk_index = $chunkIndex,
+            c.text = $text,
+            c.start_offset = $startOffset,
+            c.end_offset = $endOffset,
+            c.embedding = $embedding,
+            c.embedding_dimensions = $dimensions,
+            c.embedding_model = $model,
+            c.type = 'node_chunk',
+            c.indexed_date = datetime(),
+            c.parentNodeId = $nodeId,
+            c.has_embedding = true
+          ON MATCH SET
+            c.chunk_index = $chunkIndex,
+            c.text = $text,
+            c.start_offset = $startOffset,
+            c.end_offset = $endOffset,
+            c.embedding = $embedding,
+            c.embedding_dimensions = $dimensions,
+            c.embedding_model = $model,
+            c.indexed_date = datetime()
+          MERGE (n)-[:HAS_CHUNK {index: $chunkIndex}]->(c)
+          RETURN c.id AS chunk_id
+          `,
+          {
+            nodeId,
+            chunkId,
+            chunkIndex: chunk.chunkIndex,
+            text: chunk.text,
+            startOffset: chunk.startOffset,
+            endOffset: chunk.endOffset,
+            embedding: chunk.embedding,
+            dimensions: chunk.dimensions,
+            model: chunk.model
+          }
+        );
+      }
+      
+      console.log(`✅ Created ${chunks.length} chunks for node ${nodeId}`);
+      return { chunkCount: chunks.length, totalChars: textContent.length };
+    } catch (error: any) {
+      console.error(`⚠️  Failed to create chunks for node ${nodeId}: ${error.message}`);
+      throw error;
+    }
   }
 
   async addNode(type?: NodeType | Record<string, any>, properties?: Record<string, any>): Promise<Node> {
@@ -237,50 +336,6 @@ export class GraphManager implements IGraphManager {
       const id = actualProperties.id || `${actualType}-${++this.nodeCounter}-${Date.now()}`;
       const now = new Date().toISOString();
 
-      // Generate embeddings if enabled, not already provided, and content is available
-      let embeddingData: any = null;
-      const hasExistingEmbedding = actualProperties.embedding || actualProperties.has_embedding === true;
-      
-      console.error(`🔍 Embedding check for ${actualType} node: service=${!!this.embeddingsService}, hasExisting=${hasExistingEmbedding}`);
-      
-      if (this.embeddingsService && !hasExistingEmbedding) {
-          // Ensure embeddings service is initialized
-          if (!this.embeddingsService.isEnabled()) {
-            console.error(`🔄 Initializing embeddings service for ${actualType} node`);
-            await this.embeddingsService.initialize();
-          }
-          
-          console.error(`📊 Embeddings service enabled: ${this.embeddingsService.isEnabled()}`);
-          
-          if (this.embeddingsService.isEnabled()) {
-            // Extract text content for embedding generation
-            const textContent = this.extractTextContent(actualProperties);
-            
-            console.error(`📝 Extracted text content length: ${textContent?.length || 0} chars`);
-            
-            if (textContent && textContent.trim().length > 0) {
-              try {
-                console.error(`🧮 Generating embedding for ${actualType} node: ${id}`);
-                const result = await this.embeddingsService.generateEmbedding(textContent);
-                embeddingData = {
-                  embedding: result.embedding,
-                  embedding_dimensions: result.dimensions,
-                  embedding_model: result.model,
-                  has_embedding: true
-                };
-                console.error(`✅ Generated embedding for ${actualType} node: ${id} (${result.dimensions} dimensions)`);
-              } catch (error: any) {
-                console.error(`⚠️  Failed to generate embedding for ${actualType} node: ${error.message}`);
-                console.error(error.stack);
-              }
-            } else {
-              console.error(`⏭️  No text content to embed for ${actualType} node: ${id}`);
-            }
-          }
-        } else if (hasExistingEmbedding) {
-          console.error(`⏭️  Skipping embedding generation (already exists): ${id}`);
-        }
-
       // Flatten properties into the node (Neo4j doesn't support nested objects)
       const flattenedProps = flattenForMCP(actualProperties || {});
       const nodeProps = {
@@ -288,17 +343,71 @@ export class GraphManager implements IGraphManager {
         type: actualType,
         created: now,
         updated: now,
-        ...flattenedProps,  // Spread flattened properties at top level
-        ...(embeddingData || { has_embedding: false })  // Add embedding data if available
+        ...flattenedProps,
+        has_embedding: false  // Will be updated after embedding generation
       };
 
-      const result = await session.run(
+      // Create the node first
+      const createResult = await session.run(
         'CREATE (n:Node $props) RETURN n { .*, embedding: null }',
         { props: nodeProps }
       );
 
-      // Single node operation - return full content (don't strip)
-      return this.nodeFromRecord(result.records[0].get('n'), undefined, false);
+      // Now generate embeddings if enabled and not already provided
+      const hasExistingEmbedding = actualProperties.embedding || actualProperties.has_embedding === true;
+      
+      if (this.embeddingsService && !hasExistingEmbedding) {
+        // Ensure embeddings service is initialized
+        if (!this.embeddingsService.isEnabled()) {
+          await this.embeddingsService.initialize();
+        }
+        
+        if (this.embeddingsService.isEnabled()) {
+          // Extract text content for embedding generation
+          const textContent = this.extractTextContent(actualProperties);
+          
+          if (textContent && textContent.trim().length > 0) {
+            const chunkSize = parseInt(process.env.MIMIR_EMBEDDINGS_CHUNK_SIZE || '768', 10);
+            
+            try {
+              // Check if content needs chunking
+              if (textContent.length > chunkSize) {
+                // Large content - use chunking
+                console.log(`📦 Node ${id} has large content (${textContent.length} chars), creating chunks...`);
+                await this.createNodeChunks(id, textContent, session);
+                
+                // Update node to mark it has chunks (no single embedding on parent node)
+                await session.run(
+                  `MATCH (n:Node {id: $id}) SET n.has_embedding = true, n.has_chunks = true`,
+                  { id }
+                );
+              } else {
+                // Small content - single embedding
+                const result = await this.embeddingsService.generateEmbedding(textContent);
+                await session.run(
+                  `MATCH (n:Node {id: $id}) 
+                   SET n.embedding = $embedding,
+                       n.embedding_dimensions = $dimensions,
+                       n.embedding_model = $model,
+                       n.has_embedding = true`,
+                  {
+                    id,
+                    embedding: result.embedding,
+                    dimensions: result.dimensions,
+                    model: result.model
+                  }
+                );
+                console.log(`✅ Generated single embedding for ${actualType} node: ${id} (${result.dimensions} dimensions)`);
+              }
+            } catch (error: any) {
+              console.error(`⚠️  Failed to generate embedding for ${actualType} node: ${error.message}`);
+            }
+          }
+        }
+      }
+
+      // Return the created node
+      return this.nodeFromRecord(createResult.records[0].get('n'), undefined, false);
     } finally {
       await session.close();
     }
@@ -456,26 +565,85 @@ export class GraphManager implements IGraphManager {
     try {
       const now = new Date().toISOString();
       
-      // Flatten properties for each node
-      const nodesWithIds = nodes.map(n => ({
-        id: `${n.type}-${++this.nodeCounter}-${Date.now()}`,
-        type: n.type,
-        created: now,
-        updated: now,
-        ...flattenForMCP(n.properties || {})  // Spread flattened properties at top level
-      }));
+      // First, prepare all nodes with IDs and base properties
+      const preparedNodes = nodes.map((n) => {
+        const flatProps = flattenForMCP(n.properties || {});
+        return {
+          id: `${n.type}-${++this.nodeCounter}-${Date.now()}`,
+          type: n.type,
+          created: now,
+          updated: now,
+          ...flatProps,
+          has_embedding: false
+        };
+      });
 
-      const result = await session.run(
+      // Create all nodes in bulk
+      const createResult = await session.run(
         `
         UNWIND $nodes as node
         CREATE (n:Node)
         SET n = node
         RETURN n { .*, embedding: null }
         `,
-        { nodes: nodesWithIds }
+        { nodes: preparedNodes }
       );
 
-      return result.records.map(r => this.nodeFromRecord(r.get('n')));
+      // Now generate embeddings for each node if service is enabled
+      if (this.embeddingsService) {
+        if (!this.embeddingsService.isEnabled()) {
+          await this.embeddingsService.initialize();
+        }
+
+        if (this.embeddingsService.isEnabled()) {
+          const chunkSize = parseInt(process.env.MIMIR_EMBEDDINGS_CHUNK_SIZE || '768', 10);
+          
+          // Process each node's embeddings
+          for (let i = 0; i < nodes.length; i++) {
+            const originalNode = nodes[i];
+            const nodeId = preparedNodes[i].id;
+            const textContent = this.extractTextContent(originalNode.properties || {});
+            
+            if (textContent && textContent.trim().length > 0) {
+              try {
+                // Check if content needs chunking
+                if (textContent.length > chunkSize) {
+                  // Large content - use chunking
+                  console.log(`📦 Bulk node ${nodeId} has large content (${textContent.length} chars), creating chunks...`);
+                  await this.createNodeChunks(nodeId, textContent, session);
+                  
+                  // Update node to mark it has chunks
+                  await session.run(
+                    `MATCH (n:Node {id: $id}) SET n.has_embedding = true, n.has_chunks = true`,
+                    { id: nodeId }
+                  );
+                } else {
+                  // Small content - single embedding
+                  const result = await this.embeddingsService.generateEmbedding(textContent);
+                  await session.run(
+                    `MATCH (n:Node {id: $id}) 
+                     SET n.embedding = $embedding,
+                         n.embedding_dimensions = $dimensions,
+                         n.embedding_model = $model,
+                         n.has_embedding = true`,
+                    {
+                      id: nodeId,
+                      embedding: result.embedding,
+                      dimensions: result.dimensions,
+                      model: result.model
+                    }
+                  );
+                  console.log(`✅ Generated embedding for ${originalNode.type} node (${result.dimensions} dimensions)`);
+                }
+              } catch (error: any) {
+                console.error(`⚠️  Failed to generate embedding for ${originalNode.type} node: ${error.message}`);
+              }
+            }
+          }
+        }
+      }
+
+      return createResult.records.map(r => this.nodeFromRecord(r.get('n')));
     } finally {
       await session.close();
     }
