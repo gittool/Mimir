@@ -106,8 +106,8 @@ async function validateAgent(
 async function listModels(): Promise<void> {
   console.log('\n📋 Fetching Available Models...\n');
   
-  // Get API URL from env var
-  const apiUrl = process.env.MIMIR_LLM_API || 'http://localhost:9042/v1';
+  // Get API URL from env var (use MIMIR_LLM_API if set, otherwise MIMIR_SERVER_URL + /v1)
+  const apiUrl = process.env.MIMIR_LLM_API || `${process.env.MIMIR_SERVER_URL || 'http://localhost:9042'}/v1`;
   console.log(`   Checking: ${apiUrl}/models`);
   console.log(`   Timeout: 5 seconds\n`);
   

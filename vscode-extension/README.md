@@ -29,6 +29,16 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 - **Selective Indexing**: Choose which folders to index with custom patterns
 - **Docker-Aware Paths**: Seamless path translation for containerized environments
 - **Embedding Generation**: Automatic vector embeddings for semantic code search
+- **Real-time Progress**: Live indexing status with file-by-file progress tracking
+
+### 📊 Node Manager - Knowledge Graph Explorer
+
+- **Browse All Nodes**: View and manage memories, todos, concepts, and other graph nodes
+- **Vector Search**: Semantic search across your entire knowledge graph
+- **Node Details**: Inspect properties, edges, and relationships
+- **Embedding Management**: Generate or regenerate embeddings for any node
+- **Export Nodes**: Download nodes as JSON for backup or analysis
+- **Edge Visualization**: See how nodes connect in your knowledge graph
 
 ## 📋 Requirements
 
@@ -64,6 +74,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 - `Mimir: Open Chat` - Launch the Portal chat interface
 - `Mimir: Open Code Intelligence` - View indexing statistics and manage folders
 - `Mimir: Open Studio` - Create and manage multi-agent workflows
+- `Mimir: Open Node Manager` - Browse and manage knowledge graph nodes
 - `Mimir: Ask a Question` - Quick query without opening full UI
 
 **Native Chat**: Type `@mimir` in VSCode's chat panel
@@ -104,12 +115,29 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 
    - Click "Add Folder" in Code Intelligence
    - Select a workspace folder to index
-   - Watch as files are chunked and embedded
+   - Watch real-time progress as files are chunked and embedded
+   - Folders show visual indicators: gold pulse (indexing), green border (complete)
 
 2. **Monitor statistics**:
    - View total files, chunks, and embeddings
    - See file type distribution
    - Track last sync times for each folder
+   - Remove folders to stop indexing and clean up data
+
+### Node Manager
+
+1. **Browse your knowledge graph**:
+
+   - View all nodes organized by type (memories, todos, concepts, etc.)
+   - Click to expand each type and see paginated lists
+   - Select a node to view detailed properties and relationships
+
+2. **Search and manage**:
+   - Use vector search to find semantically similar nodes
+   - Adjust similarity threshold and result limits
+   - Generate/regenerate embeddings for any node
+   - Export nodes as JSON files to `.mimir/nodes/`
+   - Delete nodes and their associated edges
 
 ### Native Chat Participant (`@mimir`)
 
@@ -136,6 +164,10 @@ Access settings via `Preferences > Settings > Mimir`:
 ### Core Settings
 
 - **`mimir.apiUrl`**: Mimir server URL (default: `http://localhost:9042`)
+  - Docker: `http://localhost:9042`
+  - Local dev: `http://localhost:3000`
+  - Remote: `https://mimir.your-domain.com`
+  - **Note**: Extension automatically reloads when this changes
 - **`mimir.model`**: Default LLM model (e.g., `gpt-4.1`, `claude-3-opus-20240229`)
 - **`mimir.defaultPreamble`**: Default system prompt/chatmode
 
@@ -143,12 +175,29 @@ Access settings via `Preferences > Settings > Mimir`:
 
 - **`mimir.vectorSearch.depth`**: Graph traversal depth 1-3 (default: `1`)
 - **`mimir.vectorSearch.limit`**: Max search results (default: `10`)
-- **`mimir.vectorSearch.minSimilarity`**: Similarity threshold 0-1 (default: `0.5`)
+- **`mimir.vectorSearch.minSimilarity`**: Similarity threshold 0-1 (default: `0.75`)
+  - Higher values (0.8-1.0): More precise, fewer results
+  - Lower values (0.5-0.7): More results, less precise
 
 ### Advanced
 
 - **`mimir.enableTools`**: Enable MCP tool calling (default: `true`)
 - **`mimir.maxToolCalls`**: Max tool calls per response (default: `3`)
+
+### Example Configuration
+
+```json
+{
+  "mimir.apiUrl": "http://localhost:9042",
+  "mimir.model": "gpt-4.1",
+  "mimir.defaultPreamble": "mimir-v2",
+  "mimir.vectorSearch.depth": 2,
+  "mimir.vectorSearch.limit": 15,
+  "mimir.vectorSearch.minSimilarity": 0.75,
+  "mimir.enableTools": true,
+  "mimir.maxToolCalls": 3
+}
+```
 
 ## 🏗️ Architecture
 

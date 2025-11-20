@@ -55,7 +55,7 @@ class Pipe:
 
         # MCP Server Configuration
         MCP_SERVER_URL: str = Field(
-            default="http://localhost:9042/mcp",
+            default=os.getenv("MIMIR_SERVER_URL", "http://localhost:9042") + "/mcp",
             description="MCP server URL for memory/context retrieval",
         )
 

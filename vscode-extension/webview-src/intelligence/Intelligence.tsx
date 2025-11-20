@@ -36,6 +36,21 @@ interface IndexStats {
   byExtension: Record<string, number>;
 }
 
+interface SearchResult {
+  id: string;
+  type: string;
+  title: string;
+  path: string;
+  absolute_path?: string;
+  similarity: number;
+  parent_file?: {
+    path: string;
+    absolute_path: string;
+    name: string;
+    language: string;
+  };
+}
+
 export function Intelligence() {
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [stats, setStats] = useState<IndexStats | null>(null);
@@ -44,6 +59,17 @@ export function Intelligence() {
   const [error, setError] = useState<string | null>(null);
   const [progressMap, setProgressMap] = useState<Map<string, IndexingProgress>>(new Map());
   const [configReceived, setConfigReceived] = useState(false);
+  
+  // Vector search state
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [showSearchSettings, setShowSearchSettings] = useState(false);
+  const [searchSettings, setSearchSettings] = useState({
+    minSimilarity: 0.75,
+    limit: 20
+  });
 
   const loadFolders = useCallback(async () => {
     try {
@@ -234,6 +260,58 @@ export function Intelligence() {
     loadData();
   };
 
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      return;
+    }
+
+    setIsSearching(true);
+    setHasSearched(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams({
+        query: searchQuery,
+        limit: searchSettings.limit.toString(),
+        min_similarity: searchSettings.minSimilarity.toString(),
+        types: 'file' // Will be expanded to file,file_chunk by the server
+      });
+
+      const response = await fetch(`${apiUrl}/api/nodes/vector-search?${params}`);
+      const data = await response.json();
+
+      if (response.ok) {
+        setSearchResults(data.results || []);
+      } else {
+        setError(data.error || 'Search failed');
+        setSearchResults([]);
+      }
+    } catch (err: any) {
+      setError(`Search failed: ${err.message}`);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setIsSearching(false);
+    setHasSearched(false);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    
+    // Clear results when input is cleared
+    if (!value.trim()) {
+      setSearchResults([]);
+      setHasSearched(false);
+    }
+  };
+
   const formatNumber = (num: number) => {
     return num.toLocaleString();
   };
@@ -282,6 +360,123 @@ export function Intelligence() {
           <button type="button" onClick={() => setError(null)}>✕</button>
         </div>
       )}
+
+      {/* Vector Search */}
+      <div className="search-container">
+        <div className="search-bar">
+          <input
+            type="text"
+            className="search-input"
+            placeholder="🔍 Search indexed files by content..."
+            value={searchQuery}
+            onChange={handleInputChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSearch();
+              }
+            }}
+          />
+          {searchQuery && (
+            <button 
+              type="button"
+              className="clear-search-btn" 
+              onClick={clearSearch}
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
+          <button 
+            type="button"
+            className="search-btn" 
+            onClick={handleSearch}
+            disabled={isSearching}
+          >
+            {isSearching ? '⏳' : '🔍'}
+          </button>
+          <button 
+            type="button"
+            className="settings-btn" 
+            onClick={() => setShowSearchSettings(!showSearchSettings)}
+            title="Search settings"
+          >
+            ⚙️
+          </button>
+        </div>
+
+        {showSearchSettings && (
+          <div className="search-settings">
+            <div className="setting-item">
+              <label htmlFor="min-similarity">Min Similarity:</label>
+              <input
+                id="min-similarity"
+                type="range"
+                min="0.5"
+                max="1.0"
+                step="0.05"
+                value={searchSettings.minSimilarity}
+                onChange={(e) => setSearchSettings(prev => ({ 
+                  ...prev, 
+                  minSimilarity: parseFloat(e.target.value) 
+                }))}
+              />
+              <span className="setting-value">{searchSettings.minSimilarity.toFixed(2)}</span>
+            </div>
+            <div className="setting-item">
+              <label htmlFor="search-limit">Max Results:</label>
+              <input
+                id="search-limit"
+                type="number"
+                min="5"
+                max="100"
+                value={searchSettings.limit}
+                onChange={(e) => setSearchSettings(prev => ({ 
+                  ...prev, 
+                  limit: parseInt(e.target.value) || 20 
+                }))}
+              />
+              <span className="setting-value">{searchSettings.limit}</span>
+            </div>
+          </div>
+        )}
+
+        {hasSearched && (
+          <div className="search-status">
+            {isSearching ? (
+              <span>🔍 Searching indexed files...</span>
+            ) : searchResults.length > 0 ? (
+              <span>✅ Found {searchResults.length} matching file{searchResults.length !== 1 ? 's' : ''}</span>
+            ) : (
+              <span>❌ No results found</span>
+            )}
+          </div>
+        )}
+
+        {searchResults.length > 0 && (
+          <div className="search-results">
+            <h3>Search Results</h3>
+            {searchResults.map((result, idx) => (
+              <div key={idx} className="search-result-item">
+                <div className="result-header">
+                  <span className="result-icon">📄</span>
+                  <span className="result-title">{result.title || result.path}</span>
+                  <span className="result-similarity" title="Similarity score">
+                    {(result.similarity * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="result-path">
+                  {result.parent_file?.absolute_path || result.absolute_path || result.path}
+                </div>
+                {result.parent_file && (
+                  <div className="result-meta">
+                    <span className="result-language">{result.parent_file.language}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Loading State */}
       {loading && (

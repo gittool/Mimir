@@ -159,8 +159,16 @@ export class UnifiedSearchService {
       };
       
       if (options.types && Array.isArray(options.types) && options.types.length > 0) {
+        // Expand 'file' to include 'file_chunk' since File nodes don't have embeddings
+        const expandedTypes = options.types.flatMap(type => {
+          if (type === 'file') {
+            return ['file', 'file_chunk'];
+          }
+          return type;
+        });
+        
         typeFilter = 'AND node.type IN $types';
-        queryParams.types = options.types;
+        queryParams.types = expandedTypes;
       }
 
       // Use Neo4j's native vector similarity search
@@ -271,6 +279,17 @@ export class UnifiedSearchService {
       const limit = options.limit || 100;
       const offset = options.offset || 0;
 
+      // Expand 'file' to include 'file_chunk' for type filtering
+      let expandedTypes = options.types;
+      if (options.types && options.types.length > 0) {
+        expandedTypes = options.types.flatMap(type => {
+          if (type === 'file') {
+            return ['file', 'file_chunk'];
+          }
+          return type;
+        });
+      }
+
       // Search across string properties only to avoid type errors with arrays
       const result = await session.run(
         `
@@ -287,7 +306,7 @@ export class UnifiedSearchService {
           (n.type IS NOT NULL AND toLower(n.type) CONTAINS toLower($query)) OR
           (n.title IS NOT NULL AND toLower(n.title) CONTAINS toLower($query))
         )
-        ${options.types && options.types.length > 0 ? `AND n.type IN $types` : ''}
+        ${expandedTypes && expandedTypes.length > 0 ? `AND n.type IN $types` : ''}
         
         // For FileChunk nodes, get parent File information
         OPTIONAL MATCH (n)<-[:HAS_CHUNK]-(parentFile:File)
@@ -325,7 +344,7 @@ export class UnifiedSearchService {
         `,
         { 
           query, 
-          types: options.types || [], 
+          types: expandedTypes || [], 
           offset: neo4j.int(offset), 
           limit: neo4j.int(limit) 
         }

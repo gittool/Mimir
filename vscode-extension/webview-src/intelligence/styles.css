@@ -86,6 +86,199 @@
   padding: 0 8px;
 }
 
+/* Vector Search Container */
+.search-container {
+  padding: 16px;
+  background-color: var(--vscode-sideBar-background);
+  border-radius: 8px;
+  border: 1px solid var(--vscode-panel-border);
+}
+
+.search-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  padding: 8px 12px;
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--vscode-font-family);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.search-input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.search-btn,
+.settings-btn,
+.clear-search-btn {
+  padding: 8px 12px;
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.search-btn:hover,
+.settings-btn:hover,
+.clear-search-btn:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.clear-search-btn {
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  padding: 8px 10px;
+}
+
+.search-settings {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.setting-item label {
+  min-width: 120px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.setting-item input[type="range"] {
+  flex: 1;
+  accent-color: var(--vscode-button-background);
+}
+
+.setting-item input[type="number"] {
+  width: 80px;
+  padding: 4px 8px;
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.setting-value {
+  min-width: 50px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground);
+}
+
+.search-status {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background-color: var(--vscode-editor-background);
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.search-results {
+  margin-top: 16px;
+}
+
+.search-results h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--vscode-foreground);
+}
+
+.search-result-item {
+  padding: 12px;
+  margin-bottom: 8px;
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.search-result-item:hover {
+  background-color: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-focusBorder);
+  cursor: pointer;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.result-icon {
+  font-size: 16px;
+}
+
+.result-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--vscode-textLink-foreground);
+}
+
+.result-similarity {
+  padding: 2px 8px;
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.result-path {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  margin-bottom: 6px;
+}
+
+.result-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.result-language {
+  padding: 2px 6px;
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border-radius: 3px;
+  font-weight: 500;
+}
+
 /* Loading Overlay */
 .loading-overlay {
   position: fixed;

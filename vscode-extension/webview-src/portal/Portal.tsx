@@ -339,14 +339,21 @@ export function Portal() {
             
             <div className="modal-body">
               <div className="setting-row">
-                <label className="setting-label">
+                <label className="setting-label vector-search-toggle">
                   <input
                     type="checkbox"
                     checked={vectorSettings.enabled}
                     onChange={(e) => setVectorSettings(prev => ({ ...prev, enabled: e.target.checked }))}
                   />
-                  Enable Vector Search
+                  <span className={vectorSettings.enabled ? 'toggle-enabled' : 'toggle-disabled'}>
+                    {vectorSettings.enabled ? '✓ Vector Search Enabled' : '○ Vector Search Disabled'}
+                  </span>
                 </label>
+                {!vectorSettings.enabled && (
+                  <div className="fallback-notice">
+                    ℹ️ Full-text search will be used as fallback
+                  </div>
+                )}
               </div>
 
               <div className="setting-row">
