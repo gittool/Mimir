@@ -312,7 +312,7 @@ export class EmbeddingsService {
 
   /**
    * Retry wrapper for embedding generation with exponential backoff
-   * Handles EOF errors and other transient failures from Ollama
+   * Handles EOF errors, 503 (model loading), and other transient failures from Ollama
    */
   private async retryWithBackoff<T>(
     fn: () => Promise<T>,
@@ -326,19 +326,36 @@ export class EmbeddingsService {
         return await fn();
       } catch (error: any) {
         lastError = error;
+        
+        // Check for retryable errors
         const isEOFError = error.message?.includes('EOF') || 
                           error.message?.includes('unexpected end') ||
                           error.code === 'ECONNRESET';
         
-        // Only retry on EOF/connection errors, not on other errors
-        if (!isEOFError || attempt === maxRetries) {
+        const isModelLoading = error.message?.includes('503') || 
+                              error.message?.includes('Loading model') ||
+                              error.message?.includes('unavailable_error');
+        
+        const isFetchFailed = error.message?.includes('fetch failed');
+        
+        const isRetryable = isEOFError || isModelLoading || isFetchFailed;
+        
+        // Only retry on transient errors, not on other errors
+        if (!isRetryable || attempt === maxRetries) {
           throw error;
         }
         
-        // Exponential backoff: 1s, 2s, 4s, 8s...
-        const delayMs = Math.min(1000 * Math.pow(2, attempt), 10000);
+        // Exponential backoff with longer delays for model loading
+        // Model loading: 3s, 6s, 12s, 20s
+        // Other errors: 1s, 2s, 4s, 8s
+        const baseDelay = isModelLoading ? 3000 : 1000;
+        const delayMs = Math.min(baseDelay * Math.pow(2, attempt), 20000);
+        
+        const errorType = isModelLoading ? 'model loading' : 
+                         isFetchFailed ? 'fetch failed' : 'EOF';
+        
         console.warn(
-          `⚠️  ${operation} failed with EOF error (attempt ${attempt + 1}/${maxRetries + 1}). ` +
+          `⚠️  ${operation} failed with ${errorType} error (attempt ${attempt + 1}/${maxRetries + 1}). ` +
           `Retrying in ${delayMs}ms...`
         );
         

@@ -12,23 +12,27 @@ export class IntelligencePanel {
     this._apiUrl = apiUrl;
 
     this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, extensionUri);
-    
-    // Send initial config
-    this._panel.webview.postMessage({
-      command: 'config',
-      apiUrl: this._apiUrl
-    });
 
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
     this._panel.webview.onDidReceiveMessage(
       async (message) => {
         switch (message.command) {
+          case 'ready':
+            // Webview is loaded and ready - send config
+            this._panel.webview.postMessage({
+              command: 'config',
+              apiUrl: this._apiUrl
+            });
+            break;
           case 'selectFolder':
             await this._handleSelectFolder();
             break;
           case 'showMessage':
             this._showMessage(message.type, message.message);
+            break;
+          case 'confirmRemoveFolder':
+            await this._handleConfirmRemoveFolder(message.path);
             break;
         }
       },
@@ -98,8 +102,20 @@ export class IntelligencePanel {
 
     const selectedPath = folderUri[0].fsPath;
 
+    // Fetch environment config from Mimir server
+    let serverConfig: { hostWorkspaceRoot: string; workspaceRoot: string; home: string } | null = null;
+    try {
+      const response = await fetch(`${this._apiUrl}/api/index-config`);
+      if (response.ok) {
+        serverConfig = await response.json() as { hostWorkspaceRoot: string; workspaceRoot: string; home: string };
+        console.log('[IntelligencePanel] Fetched server config:', serverConfig);
+      }
+    } catch (error) {
+      console.error('[IntelligencePanel] Failed to fetch server config:', error);
+    }
+
     // Validate path is within workspace
-    const validation = this._validateAndTranslatePath(selectedPath, workspaceFolders);
+    const validation = this._validateAndTranslatePath(selectedPath, workspaceFolders, serverConfig);
     
     if (!validation.isValid) {
       vscode.window.showErrorMessage(
@@ -150,39 +166,42 @@ export class IntelligencePanel {
     });
   }
 
-  private _validateAndTranslatePath(hostPath: string, workspaceFolders: readonly vscode.WorkspaceFolder[]): {
+  private _validateAndTranslatePath(
+    hostPath: string, 
+    workspaceFolders: readonly vscode.WorkspaceFolder[],
+    serverConfig: { hostWorkspaceRoot: string; workspaceRoot: string; home: string } | null = null
+  ): {
     isValid: boolean;
     error?: string;
     containerPath?: string;
   } {
     // Get environment variables for path translation
-    const hostWorkspaceRoot = process.env.HOST_WORKSPACE_ROOT || '';
-    const containerWorkspaceRoot = process.env.WORKSPACE_ROOT || '/workspace';
+    // Use server's HOST_WORKSPACE_ROOT value, but LOCAL HOME for expansion
+    let hostWorkspaceRoot = serverConfig?.hostWorkspaceRoot || process.env.HOST_WORKSPACE_ROOT || '';
+    const containerWorkspaceRoot = serverConfig?.workspaceRoot || process.env.WORKSPACE_ROOT || '/workspace';
+    // ALWAYS use local HOME directory (VSCode runs on host, not in container)
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
 
-    // Normalize paths
-    const normalizedHostPath = path.normalize(hostPath);
+    console.log('[IntelligencePanel] HOST_WORKSPACE_ROOT:', hostWorkspaceRoot || '(not set)');
+    console.log('[IntelligencePanel] HOME (local):', homeDir || '(not set)');
+    console.log('[IntelligencePanel] HOME (server):', serverConfig?.home || '(not set)');
+    console.log('[IntelligencePanel] Selected path:', hostPath);
+    console.log('[IntelligencePanel] Using server config:', serverConfig ? 'yes' : 'no');
 
-    // Check if path is within any workspace folder
-    let isWithinWorkspace = false;
-    let workspaceRoot = '';
-
-    for (const folder of workspaceFolders) {
-      const folderPath = path.normalize(folder.uri.fsPath);
-      if (normalizedHostPath.startsWith(folderPath)) {
-        isWithinWorkspace = true;
-        workspaceRoot = folderPath;
-        break;
+    // Expand tilde (~) in HOST_WORKSPACE_ROOT if present
+    // Use LOCAL HOME directory for expansion (not container's)
+    if (hostWorkspaceRoot.startsWith('~/') || hostWorkspaceRoot === '~') {
+      if (homeDir) {
+        hostWorkspaceRoot = hostWorkspaceRoot.replace(/^~/, homeDir);
+        console.log('[IntelligencePanel] Expanded HOST_WORKSPACE_ROOT to:', hostWorkspaceRoot);
       }
     }
 
-    if (!isWithinWorkspace) {
-      return {
-        isValid: false,
-        error: 'Selected folder is not within the current workspace'
-      };
-    }
+    // Normalize paths
+    const normalizedHostPath = path.normalize(hostPath);
+    console.log('[IntelligencePanel] Normalized path:', normalizedHostPath);
 
-    // If HOST_WORKSPACE_ROOT is set, we need to translate the path
+    // If HOST_WORKSPACE_ROOT is set, validate against it (Docker/container scenario)
     if (hostWorkspaceRoot) {
       const normalizedHostRoot = path.normalize(hostWorkspaceRoot);
       
@@ -190,7 +209,7 @@ export class IntelligencePanel {
       if (!normalizedHostPath.startsWith(normalizedHostRoot)) {
         return {
           isValid: false,
-          error: `Folder is outside the mounted workspace.\n\nMounted workspace: ${hostWorkspaceRoot}\nSelected folder: ${hostPath}\n\nOnly folders within the mounted workspace can be indexed.`
+          error: `Folder is outside the mounted workspace.\n\nMounted workspace: ${hostWorkspaceRoot} (expanded)\nSelected folder: ${hostPath}\n\nOnly folders within the mounted workspace can be indexed.`
         };
       }
 
@@ -204,11 +223,51 @@ export class IntelligencePanel {
       };
     }
 
+    // No HOST_WORKSPACE_ROOT set - validate against VSCode workspace folders (local development)
+    let isWithinWorkspace = false;
+
+    for (const folder of workspaceFolders) {
+      const folderPath = path.normalize(folder.uri.fsPath);
+      if (normalizedHostPath.startsWith(folderPath)) {
+        isWithinWorkspace = true;
+        break;
+      }
+    }
+
+    if (!isWithinWorkspace) {
+      return {
+        isValid: false,
+        error: 'Selected folder is not within the current workspace'
+      };
+    }
+
     // No translation needed (local development, no Docker)
     return {
       isValid: true,
       containerPath: normalizedHostPath
     };
+  }
+
+  private async _handleConfirmRemoveFolder(path: string) {
+    // Extract folder name for cleaner display
+    const folderName = path.split('/').pop() || path;
+    
+    const confirmed = await vscode.window.showWarningMessage(
+      `Remove folder from indexing?`,
+      {
+        modal: true,
+        detail: `This will delete all indexed files, chunks, and embeddings for:\n\n${path}\n\nThis action cannot be undone.`
+      },
+      'Remove Folder'
+    );
+
+    if (confirmed === 'Remove Folder') {
+      // Send confirmation back to webview to proceed with deletion
+      this._panel.webview.postMessage({
+        command: 'removeFolderConfirmed',
+        path: path
+      });
+    }
   }
 
   private _showMessage(type: 'info' | 'warning' | 'error', message: string) {

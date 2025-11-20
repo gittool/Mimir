@@ -85,8 +85,8 @@ async function startHttpServer() {
     origin: process.env.MCP_ALLOWED_ORIGIN || '*', 
     methods: ['POST','GET','DELETE'], 
     exposedHeaders: ['Mcp-Session-Id'], 
-    // Allow Accept header and the custom mcp-session-id header
-    allowedHeaders: ['Content-Type', 'Accept', 'mcp-session-id'], 
+    // Allow Accept header, custom mcp-session-id header, and Cache-Control for SSE
+    allowedHeaders: ['Content-Type', 'Accept', 'mcp-session-id', 'Cache-Control'], 
     credentials: true 
   }));
 

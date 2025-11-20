@@ -38,10 +38,14 @@ router.get('/indexed-folders', async (req: Request, res: Response) => {
       watchConfigs.map(async (config) => {
         const session = driver!.session();
         try {
+          // Ensure folder path ends with / for exact matching
+          const folderPath = config.path.endsWith('/') ? config.path : config.path + '/';
+          
           const result = await session.run(
             `
             MATCH (f:File)
-            WHERE f.path STARTS WITH $folderPath
+            WHERE f.path STARTS WITH $folderPath OR f.path = $exactPath
+            WITH DISTINCT f
             OPTIONAL MATCH (f)-[:HAS_CHUNK]->(c:FileChunk)
             OPTIONAL MATCH (c)-[:HAS_EMBEDDING]->(e)
             RETURN 
@@ -49,7 +53,10 @@ router.get('/indexed-folders', async (req: Request, res: Response) => {
               COUNT(DISTINCT c) as chunkCount,
               COUNT(DISTINCT e) as embeddingCount
             `,
-            { folderPath: config.path }
+            { 
+              folderPath: folderPath,
+              exactPath: config.path
+            }
           );
 
           const record = result.records[0];
@@ -143,15 +150,18 @@ router.post('/index-folder', async (req: Request, res: Response) => {
       debounce_ms: 500
     });
 
-    // Start watching with FileWatchManager
-    const watchManager = getWatchManager();
-    await watchManager.startWatch(config);
-
     await driver.close();
 
+    // Start watching in background (don't await - let it run async)
+    const watchManager = getWatchManager();
+    watchManager.startWatch(config).catch((error) => {
+      console.error(`❌ Error during background indexing for ${path}:`, error);
+    });
+
+    // Return immediately - indexing continues in background
     res.json({ 
       success: true, 
-      message: `Folder added to indexing: ${path}`,
+      message: `Folder added to indexing: ${path}. Indexing will continue in the background.`,
       path,
       hostPath,
       config
@@ -236,6 +246,107 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
       details: error.message 
     });
   }
+});
+
+/**
+ * GET /api/index-config
+ * Returns environment configuration for path translation
+ */
+router.get('/index-config', async (req: Request, res: Response) => {
+  try {
+    const config = {
+      hostWorkspaceRoot: process.env.HOST_WORKSPACE_ROOT || '',
+      workspaceRoot: process.env.WORKSPACE_ROOT || '/workspace',
+      home: process.env.HOME || process.env.USERPROFILE || '',
+    };
+    
+    res.json(config);
+  } catch (error: any) {
+    console.error('Error getting index config:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/indexing-status
+ * Returns the indexing status for all folders
+ */
+router.get('/indexing-status', async (req: Request, res: Response) => {
+  try {
+    const watchManager = getWatchManager();
+    const statuses: { path: string; isIndexing: boolean }[] = [];
+    
+    // Get all watched folders and check their indexing status
+    const driver = neo4j.driver(
+      process.env.NEO4J_URI || 'bolt://localhost:7687',
+      neo4j.auth.basic(
+        process.env.NEO4J_USER || 'neo4j',
+        process.env.NEO4J_PASSWORD || 'your_password_here'
+      )
+    );
+    
+    const configManager = new WatchConfigManager(driver);
+    const watchConfigs = await configManager.listActive();
+    
+    for (const config of watchConfigs) {
+      statuses.push({
+        path: config.path,
+        isIndexing: watchManager.isIndexing(config.path)
+      });
+    }
+    
+    await driver.close();
+    
+    res.json({ statuses });
+  } catch (error: any) {
+    console.error('Error getting indexing status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/indexing-progress (SSE)
+ * Streams real-time indexing progress updates for all active indexing jobs
+ */
+router.get('/indexing-progress', (req: Request, res: Response) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+  const watchManager = getWatchManager();
+
+  // Send initial progress for all active jobs
+  const sendProgress = () => {
+    const allProgress = watchManager.getAllProgress();
+    
+    for (const progress of allProgress) {
+      const data = JSON.stringify(progress);
+      res.write(`data: ${data}\n\n`);
+    }
+
+    // Send heartbeat if no active jobs
+    if (allProgress.length === 0) {
+      res.write(`: heartbeat\n\n`);
+    }
+  };
+
+  // Send progress immediately
+  sendProgress();
+
+  // Set up interval to send updates
+  const intervalId = setInterval(() => {
+    sendProgress();
+  }, 1000); // Update every second
+
+  // Clean up on client disconnect
+  req.on('close', () => {
+    clearInterval(intervalId);
+    console.log('📡 SSE client disconnected from indexing progress');
+  });
+
+  console.log('📡 SSE client connected to indexing progress');
 });
 
 /**

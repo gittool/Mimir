@@ -101,7 +101,7 @@ export class FileIndexer {
         const checkResult = await session.run(
           `MATCH (f:File {path: $path})-[:HAS_CHUNK]->(c:FileChunk)
            RETURN count(c) AS chunk_count, f.last_modified AS last_modified`,
-          { path: relativePath }
+          { path: filePath }
         );
         
         if (checkResult.records.length > 0) {
@@ -116,11 +116,11 @@ export class FileIndexer {
               console.log(`📝 File modified, regenerating chunks: ${relativePath}`);
               hasExistingChunks = false;
               
-              // Delete old chunks
+              // Delete old chunks (use filePath which is the absolute container path)
               await session.run(
                 `MATCH (f:File {path: $path})-[:HAS_CHUNK]->(c:FileChunk)
                  DETACH DELETE c`,
-                { path: relativePath }
+                { path: filePath }
               );
             }
           }
@@ -143,6 +143,8 @@ export class FileIndexer {
       
       // Convert container path to host path using environment variables
       const hostPath = this.translateToHostPath(filePath);
+      // Use host path for logging (fall back to container path if not available)
+      const displayPath = hostPath || filePath;
       
       const fileResult = await session.run(`
         MERGE (f:File:Node {path: $path})
@@ -194,8 +196,8 @@ export class FileIndexer {
                 
                 const result = await session.run(`
                   MATCH (f:File) WHERE id(f) = $fileNodeId
-                  CREATE (c:FileChunk:Node)
-                  SET c.id = $chunkId,
+                  MERGE (c:FileChunk:Node {id: $chunkId})
+                  ON CREATE SET
                       c.chunk_index = $chunkIndex,
                       c.text = $text,
                       c.start_offset = $startOffset,
@@ -208,7 +210,16 @@ export class FileIndexer {
                       c.filePath = f.path,
                       c.fileName = f.name,
                       c.parentFileId = id(f)
-                  CREATE (f)-[:HAS_CHUNK {index: $chunkIndex}]->(c)
+                  ON MATCH SET
+                      c.chunk_index = $chunkIndex,
+                      c.text = $text,
+                      c.start_offset = $startOffset,
+                      c.end_offset = $endOffset,
+                      c.embedding = $embedding,
+                      c.embedding_dimensions = $dimensions,
+                      c.embedding_model = $model,
+                      c.indexed_date = datetime()
+                  MERGE (f)-[:HAS_CHUNK {index: $chunkIndex}]->(c)
                   RETURN c.id AS chunk_id
                 `, {
                   fileNodeId,
@@ -240,7 +251,7 @@ export class FileIndexer {
                 chunksCreated++;
               }
               
-              console.log(`✅ Created ${chunksCreated} chunk embeddings with sequential links for ${relativePath}`);
+              console.log(`✅ Created ${chunksCreated} chunk embeddings with sequential links for ${displayPath}`);
             } else {
               // Small file: Store embedding directly on File node
               const embedding = await this.embeddingsService.generateEmbedding(content);
@@ -259,14 +270,14 @@ export class FileIndexer {
                 model: embedding.model
               });
               
-              console.log(`✅ Created file embedding for ${relativePath}`);
+              console.log(`✅ Created file embedding for ${displayPath}`);
             }
           } catch (error: any) {
-            console.warn(`⚠️  Failed to generate embeddings for ${relativePath}: ${error.message}`);
+            console.warn(`⚠️  Failed to generate embeddings for ${displayPath}: ${error.message}`);
           }
         }
       } else if (generateEmbeddings && hasExistingChunks) {
-        console.log(`⏭️  Skipping embeddings (already exist): ${relativePath}`);
+        console.log(`⏭️  Skipping embeddings (already exist): ${displayPath}`);
       }
       
       return {

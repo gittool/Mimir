@@ -12,6 +12,19 @@ interface FolderInfo {
   status: 'active' | 'stopped' | 'error';
   lastSync: string;
   patterns?: string[];
+  isIndexing?: boolean;
+}
+
+interface IndexingProgress {
+  path: string;
+  totalFiles: number;
+  indexed: number;
+  skipped: number;
+  errored: number;
+  currentFile?: string;
+  status: 'queued' | 'indexing' | 'completed' | 'cancelled' | 'error';
+  startTime?: number;
+  endTime?: number;
 }
 
 interface IndexStats {
@@ -29,13 +42,35 @@ export function Intelligence() {
   const [loading, setLoading] = useState(false);
   const [apiUrl, setApiUrl] = useState('http://localhost:9042');
   const [error, setError] = useState<string | null>(null);
+  const [progressMap, setProgressMap] = useState<Map<string, IndexingProgress>>(new Map());
+  const [configReceived, setConfigReceived] = useState(false);
 
   const loadFolders = useCallback(async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/indexed-folders`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json() as any;
-      setFolders(data.folders || []);
+      const [foldersResponse, statusResponse] = await Promise.all([
+        fetch(`${apiUrl}/api/indexed-folders`),
+        fetch(`${apiUrl}/api/indexing-status`).catch(() => null)
+      ]);
+      
+      if (!foldersResponse.ok) throw new Error(`HTTP ${foldersResponse.status}`);
+      
+      const foldersData = await foldersResponse.json() as any;
+      let folders = foldersData.folders || [];
+      
+      // Merge indexing status if available
+      if (statusResponse && statusResponse.ok) {
+        const statusData = await statusResponse.json() as any;
+        const statusMap = new Map(
+          statusData.statuses?.map((s: any) => [s.path, s.isIndexing]) || []
+        );
+        
+        folders = folders.map((folder: FolderInfo) => ({
+          ...folder,
+          isIndexing: statusMap.get(folder.path) || false
+        }));
+      }
+      
+      setFolders(folders);
     } catch (err: any) {
       console.error('Failed to load folders:', err);
       setFolders([]);
@@ -66,47 +101,26 @@ export function Intelligence() {
     }
   }, [loadFolders, loadStats]);
 
-  useEffect(() => {
-    loadData();
+  const performRemoveFolder = useCallback(async (path: string) => {
+    console.log('[Intelligence] Performing deletion for path:', path);
     
-    // Listen for messages from extension
-    const handleMessage = (event: MessageEvent) => {
-      const message = event.data;
-      switch (message.command) {
-        case 'config':
-          setApiUrl(message.apiUrl || 'http://localhost:9042');
-          break;
-        case 'refresh':
-          loadData();
-          break;
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [loadData]);
-
-  const handleAddFolder = () => {
-    // Ask extension to open folder picker
-    vscode.postMessage({ command: 'selectFolder' });
-  };
-
-  const handleRemoveFolder = async (path: string) => {
-    if (!confirm(`Remove folder from indexing?\n\n${path}\n\nThis will delete all indexed chunks and embeddings for this folder.`)) {
-      return;
-    }
-
     try {
+      console.log('[Intelligence] Sending DELETE request to:', `${apiUrl}/api/indexed-folders`);
       const response = await fetch(`${apiUrl}/api/indexed-folders`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path })
       });
 
+      console.log('[Intelligence] DELETE response status:', response.status);
+
       if (!response.ok) {
         const error = await response.text();
+        console.error('[Intelligence] DELETE request failed:', error);
         throw new Error(error);
       }
+
+      console.log('[Intelligence] Folder deleted successfully');
 
       vscode.postMessage({ 
         command: 'showMessage', 
@@ -116,12 +130,104 @@ export function Intelligence() {
 
       loadData();
     } catch (err: any) {
+      console.error('[Intelligence] Error during deletion:', err);
+      
       vscode.postMessage({ 
         command: 'showMessage', 
         type: 'error',
         message: `❌ Failed to remove folder: ${err.message}` 
       });
     }
+  }, [apiUrl, loadData]);
+
+  useEffect(() => {
+    // Tell extension we're ready to receive config
+    vscode.postMessage({ command: 'ready' });
+    
+    // Listen for messages from extension
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
+      switch (message.command) {
+        case 'config':
+          setApiUrl(message.apiUrl || 'http://localhost:9042');
+          setConfigReceived(true);
+          break;
+        case 'refresh':
+          loadData();
+          break;
+        case 'removeFolderConfirmed':
+          // Extension confirmed deletion, proceed with API call
+          performRemoveFolder(message.path);
+          break;
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [loadData, performRemoveFolder]);
+
+  // Load data once config is received
+  useEffect(() => {
+    if (configReceived) {
+      loadData();
+    }
+  }, [configReceived, loadData]);
+
+  // SSE connection for real-time indexing progress
+  useEffect(() => {
+    // Don't connect until we have the actual API URL from config
+    if (!configReceived) {
+      return;
+    }
+
+    const eventSource = new EventSource(`${apiUrl}/api/indexing-progress`);
+
+    eventSource.onmessage = (event) => {
+      if (event.data && event.data !== ': heartbeat') {
+        try {
+          const progress: IndexingProgress = JSON.parse(event.data);
+          
+          setProgressMap((prev) => {
+            const newMap = new Map(prev);
+            newMap.set(progress.path, progress);
+            return newMap;
+          });
+
+          // Reload folder data when indexing completes
+          if (progress.status === 'completed') {
+            setTimeout(() => {
+              loadFolders();
+            }, 1000);
+          }
+        } catch (err) {
+          console.error('[Intelligence] Failed to parse SSE data:', err);
+        }
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('[Intelligence] SSE connection error:', err);
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [apiUrl, loadFolders, configReceived]);
+
+  const handleAddFolder = () => {
+    // Ask extension to open folder picker
+    vscode.postMessage({ command: 'selectFolder' });
+  };
+
+  const handleRemoveFolder = (path: string) => {
+    console.log('[Intelligence] Delete button clicked for path:', path);
+    
+    // Request confirmation from extension host (webviews can't use confirm())
+    vscode.postMessage({ 
+      command: 'confirmRemoveFolder',
+      path: path
+    });
   };
 
   const handleRefresh = () => {
@@ -238,14 +344,57 @@ export function Intelligence() {
           </div>
         ) : (
           <div className="folders-list">
-            {folders.map((folder) => (
-              <div key={folder.path} className={`folder-item ${folder.status}`}>
-                <div className="folder-info">
-                  <span className="folder-status" title={folder.status}>
-                    {getStatusIcon(folder.status)}
-                  </span>
-                  <div className="folder-details">
-                    <div className="folder-path">{folder.hostPath || folder.path}</div>
+            {folders.map((folder) => {
+              const progress = progressMap.get(folder.path);
+              const isIndexing = progress?.status === 'indexing';
+              const isQueued = progress?.status === 'queued';
+              const isCompleted = progress?.status === 'completed';
+              
+              let statusClass = folder.status;
+              if (isIndexing) statusClass += ' folder-indexing';
+              if (isQueued) statusClass += ' folder-queued';
+              if (isCompleted) statusClass += ' folder-completed';
+              
+              return (
+                <div key={folder.path} className={`folder-item ${statusClass}`}>
+                  <div className="folder-info">
+                    <span className="folder-status" title={folder.status}>
+                      {getStatusIcon(folder.status)}
+                    </span>
+                    <div className="folder-details">
+                      <div className="folder-path">
+                        {folder.hostPath || folder.path}
+                        {isIndexing && progress && (
+                          <span style={{ 
+                            marginLeft: '8px', 
+                            fontSize: '12px', 
+                            color: 'var(--vscode-charts-blue)',
+                            fontWeight: 'bold'
+                          }}>
+                            🔄 {progress.indexed}/{progress.totalFiles} ({progress.currentFile || '...'})
+                          </span>
+                        )}
+                        {isQueued && (
+                          <span style={{ 
+                            marginLeft: '8px', 
+                            fontSize: '12px', 
+                            color: 'var(--vscode-charts-orange)',
+                            fontWeight: 'bold'
+                          }}>
+                            ⏳ Queued...
+                          </span>
+                        )}
+                        {isCompleted && (
+                          <span style={{ 
+                            marginLeft: '8px', 
+                            fontSize: '12px', 
+                            color: 'var(--vscode-charts-green)',
+                            fontWeight: 'bold'
+                          }}>
+                            ✅ Complete ({progress.indexed} indexed, {progress.skipped} skipped, {progress.errored} errors)
+                          </span>
+                        )}
+                      </div>
                     <div className="folder-stats">
                       <span title="Files">📄 {formatNumber(folder.fileCount)}</span>
                       <span title="Chunks">🧩 {formatNumber(folder.chunkCount)}</span>
@@ -263,13 +412,14 @@ export function Intelligence() {
                     type="button"
                     className="button-danger"
                     onClick={() => handleRemoveFolder(folder.path)}
-                    title="Remove from indexing"
+                    title={folder.isIndexing ? 'Cancel indexing and remove folder' : 'Remove from indexing'}
                   >
-                    🗑️ Remove
+                    {folder.isIndexing ? '🛑 Cancel & Remove' : '🗑️ Remove'}
                   </button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>

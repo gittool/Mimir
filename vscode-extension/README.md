@@ -5,6 +5,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 ## 🚀 Features
 
 ### 💬 Portal - Advanced AI Chat
+
 - **Graph-RAG Search**: Multi-hop knowledge graph traversal through your codebase
 - **File Attachments**: Upload and reference files in your conversations
 - **Vector Search Configuration**: Fine-tune similarity thresholds, search depth, and result limits
@@ -12,6 +13,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 - **Native Chat Participant**: Use `@mimir` in VSCode's native chat panel
 
 ### 🎨 Studio - Multi-Agent Workflow Orchestration
+
 - **Visual Workflow Builder**: Drag-and-drop interface for designing complex agent workflows
 - **Multi-Agent Coordination**: Define specialized agents with custom roles and responsibilities
 - **Parallel Execution**: Run independent tasks simultaneously for faster completion
@@ -20,6 +22,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 - **Real-time Progress**: Watch workflows execute with live status updates
 
 ### 🔍 Code Intelligence - Smart Indexing & Analysis
+
 - **Folder Watching**: Automatically index and track changes in your workspace folders
 - **Statistics Dashboard**: View file counts, chunks, and embeddings across your codebase
 - **File Type Breakdown**: Analyze your project composition by file extensions
@@ -38,6 +41,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 ### 1. Configure the Mimir Server Endpoint
 
 **Via Settings UI**:
+
 1. Open Settings: `CMD+,` (Mac) or `CTRL+,` (Windows/Linux)
 2. Search for "Mimir API URL"
 3. Set to your server endpoint:
@@ -46,6 +50,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
    - Remote: `http://your-server:port`
 
 **Via settings.json**:
+
 ```json
 {
   "mimir.apiUrl": "http://localhost:9042"
@@ -55,6 +60,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 ### 2. Access Mimir Features
 
 **Command Palette** (`CMD/CTRL + Shift + P`):
+
 - `Mimir: Open Chat` - Launch the Portal chat interface
 - `Mimir: Open Code Intelligence` - View indexing statistics and manage folders
 - `Mimir: Open Studio` - Create and manage multi-agent workflows
@@ -67,6 +73,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 ### Portal - AI Chat
 
 1. **Ask questions with file context**:
+
    - Click the attachment button to upload files
    - Configure vector search settings via the ⚙️ button
    - Get intelligent responses based on your codebase
@@ -79,6 +86,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 ### Studio - Workflow Orchestration
 
 1. **Create a workflow**:
+
    - Click "New Workflow" in the Studio
    - Drag task nodes onto the canvas
    - Connect dependencies between tasks
@@ -93,6 +101,7 @@ Complete AI-powered development platform bringing advanced chat, visual workflow
 ### Code Intelligence
 
 1. **Index your codebase**:
+
    - Click "Add Folder" in Code Intelligence
    - Select a workspace folder to index
    - Watch as files are chunked and embedded
@@ -113,6 +122,7 @@ For quick questions in VSCode's chat panel, use `@mimir`:
 ```
 
 **Available Flags**:
+
 - `--use` / `-u`: Preamble/chatmode name
 - `--model` / `-m`: Model selection
 - `--depth` / `-d`: Vector search depth (1-3)
@@ -124,22 +134,26 @@ For quick questions in VSCode's chat panel, use `@mimir`:
 Access settings via `Preferences > Settings > Mimir`:
 
 ### Core Settings
+
 - **`mimir.apiUrl`**: Mimir server URL (default: `http://localhost:9042`)
 - **`mimir.model`**: Default LLM model (e.g., `gpt-4.1`, `claude-3-opus-20240229`)
 - **`mimir.defaultPreamble`**: Default system prompt/chatmode
 
 ### Vector Search
+
 - **`mimir.vectorSearch.depth`**: Graph traversal depth 1-3 (default: `1`)
 - **`mimir.vectorSearch.limit`**: Max search results (default: `10`)
 - **`mimir.vectorSearch.minSimilarity`**: Similarity threshold 0-1 (default: `0.5`)
 
 ### Advanced
+
 - **`mimir.enableTools`**: Enable MCP tool calling (default: `true`)
 - **`mimir.maxToolCalls`**: Max tool calls per response (default: `3`)
 
 ## 🏗️ Architecture
 
 Mimir uses a graph-based RAG architecture combining:
+
 - **Neo4j**: Graph database for relationships and context
 - **Vector Embeddings**: Semantic search across your codebase
 - **Multi-Agent System**: Coordinated AI agents with specialized roles
@@ -149,6 +163,7 @@ Mimir uses a graph-based RAG architecture combining:
 ## 📚 Documentation
 
 For comprehensive documentation:
+
 - [Getting Started Guide](../docs/getting-started/)
 - [Configuration Guide](../docs/configuration/)
 - [Architecture Overview](../docs/architecture/)
