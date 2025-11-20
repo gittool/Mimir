@@ -61,6 +61,8 @@
     "embeddings:clear": "node scripts/check-and-reset-embeddings.js --reset --clear-only",
     "embeddings:generate": "node scripts/check-and-reset-embeddings.js --generate-missing",
     "embeddings:backfill": "node build/scripts/backfill-embeddings.js",
+    "db:cleanup-edges": "node scripts/cleanup-duplicate-edges.js",
+    "db:cleanup-edges:dry-run": "node scripts/cleanup-duplicate-edges.js --dry-run",
     "models:find": "node scripts/find-ollama-models.js",
     "llama:build": "./scripts/build-llama-cpp.sh",
     "llama:build-mxbai": "./scripts/build-llama-cpp-mxbai.sh",

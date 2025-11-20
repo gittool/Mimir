@@ -221,16 +221,29 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
     // Delete indexed files and chunks for this folder
     const session = driver.session();
     try {
-      await session.run(
+      // Ensure path ends with separator to avoid false matches (e.g., /src matching /src-other)
+      const folderPathWithSep = path.endsWith('/') ? path : path + '/';
+      
+      // Delete File nodes and their FileChunk children
+      const fileResult = await session.run(
         `
         MATCH (f:File)
-        WHERE f.path STARTS WITH $folderPath
+        WHERE f.path STARTS WITH $folderPathWithSep OR f.path = $exactPath
         OPTIONAL MATCH (f)-[:HAS_CHUNK]->(c:FileChunk)
-        OPTIONAL MATCH (c)-[:HAS_EMBEDDING]->(e)
-        DETACH DELETE f, c, e
+        DETACH DELETE f, c
+        RETURN count(DISTINCT f) as fileCount, count(DISTINCT c) as chunkCount
         `,
-        { folderPath: path }
+        { 
+          folderPathWithSep,
+          exactPath: path
+        }
       );
+      
+      const stats = fileResult.records[0];
+      const deletedFiles = stats ? stats.get('fileCount').toInt() : 0;
+      const deletedChunks = stats ? stats.get('chunkCount').toInt() : 0;
+      
+      console.log(`🗑️  Deleted ${deletedFiles} files and ${deletedChunks} file chunks`);
     } finally {
       await session.close();
       await driver.close();
