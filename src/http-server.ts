@@ -166,11 +166,15 @@ async function startHttpServer() {
     app.use(passport.session());
   }
 
+  // Mount auth routes FIRST (must be public for login to work)
+  // Auth routes: /auth/login, /auth/logout, /auth/status, /auth/config, /auth/oauth/callback
+  app.use(authRouter);
+
   // Protect API routes (only if security enabled)
   if (process.env.MIMIR_ENABLE_SECURITY === 'true') {
     app.use('/api', (req, res, next) => {
-      // Skip auth check for health endpoint and auth endpoints
-      if (req.path === '/health' || req.path.startsWith('/auth')) {
+      // Skip auth check for health endpoint
+      if (req.path === '/health') {
         return next();
       }
       
@@ -203,9 +207,6 @@ async function startHttpServer() {
     console.log(`[REQUEST] ${req.method} ${req.path}`);
     next();
   });
-  
-  // Mount auth routes AFTER session middleware (auth routes need session support)
-  app.use(authRouter);
 
   // Serve static frontend files (assets only, not HTML)
   const frontendDistPath = path.join(__dirname, '../frontend/dist');
