@@ -35,7 +35,11 @@ router.get('/auth/oauth/callback',
 
 // Logout (both dev and prod)
 router.post('/auth/logout', (req, res) => {
-  req.logout(() => {
+  req.logout((err) => {
+    if (err) {
+      console.error('[Auth] Logout error:', err);
+      return res.status(500).json({ error: 'Logout failed', details: err.message });
+    }
     res.json({ success: true });
   });
 });

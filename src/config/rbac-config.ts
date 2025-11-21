@@ -178,6 +178,9 @@ export async function initRBACConfig(): Promise<RBACConfig> {
     } catch (error: any) {
       console.error(`❌ Error loading RBAC config:`, error.message);
       console.warn('⚠️  Falling back to default RBAC config');
+      
+      // Reset promise to allow retry
+      configLoadPromise = null;
     }
     
     // Return default config
@@ -253,4 +256,5 @@ export function getRBACConfig(): RBACConfig {
 // Clear cached config (useful for testing)
 export function clearConfigCache(): void {
   cachedConfig = null;
+  configLoadPromise = null;
 }

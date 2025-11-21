@@ -159,6 +159,17 @@ chmod 600 nginx/.api-keys
 
 ### Step 4: Create Nginx Configuration (5 minutes)
 
+**⚠️ Important**: The configuration below uses `${MIMIR_API_KEY}` for environment variable substitution. Standard Nginx doesn't support this natively. You have two options:
+
+1. **Use envsubst** (recommended for Docker):
+   ```bash
+   # Process config with envsubst before starting Nginx
+   envsubst '${MIMIR_API_KEY}' < nginx.conf.template > nginx.conf
+   ```
+
+2. **Use Docker environment variables** (shown in docker-compose.yml below):
+   The docker-compose configuration passes the environment variable to the container.
+
 Create `nginx/nginx.conf`:
 
 ```nginx

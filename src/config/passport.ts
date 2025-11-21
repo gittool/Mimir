@@ -70,17 +70,36 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true' &&
     clientSecret: process.env.MIMIR_OAUTH_CLIENT_SECRET!,
     callbackURL: process.env.MIMIR_OAUTH_CALLBACK_URL!,
   }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
-    // User authenticated via OAuth
-    // Extract roles/groups from profile (IdP-specific)
-    const roles = profile.roles || profile.groups || [];
-    
-    return done(null, { 
-      id: profile.id, 
-      email: profile.email,
-      roles: Array.isArray(roles) ? roles : [roles],
-      // Preserve original profile for custom claim extraction
-      ...profile
-    });
+    try {
+      // Fetch user profile from userinfo endpoint
+      const userinfoURL = process.env.MIMIR_OAUTH_USERINFO_URL || `${process.env.MIMIR_OAUTH_ISSUER}/oauth2/v1/userinfo`;
+      
+      const response = await fetch(userinfoURL, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        return done(new Error(`Failed to fetch user profile: ${response.statusText}`));
+      }
+      
+      const userProfile = await response.json();
+      
+      // Extract roles from profile (configurable claim path)
+      const roles = userProfile.roles || userProfile.groups || [];
+      
+      return done(null, {
+        id: userProfile.sub || userProfile.id || userProfile.email,
+        email: userProfile.email,
+        username: userProfile.preferred_username || userProfile.username || userProfile.email,
+        roles: Array.isArray(roles) ? roles : [roles],
+        // Preserve original profile for custom claim extraction
+        ...userProfile
+      });
+    } catch (error) {
+      return done(error);
+    }
   }));
 }
 
