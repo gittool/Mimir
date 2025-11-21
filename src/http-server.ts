@@ -20,10 +20,12 @@ import { createChatRouter } from './api/chat-api.js';
 import { createMCPToolsRouter } from './api/mcp-tools-api.js';
 import indexRouter from './api/index-api.js';
 import nodesRouter from './api/nodes-api.js';
+import apiKeysRouter from './api/api-keys-api.js';
 import { FileWatchManager } from './indexing/FileWatchManager.js';
 import type { IGraphManager } from './types/index.js';
 import passport from './config/passport.js';
 import authRouter from './api/auth-api.js';
+import { apiKeyAuth } from './middleware/api-key-auth.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -172,18 +174,25 @@ async function startHttpServer() {
 
   // Protect API routes (only if security enabled)
   if (process.env.MIMIR_ENABLE_SECURITY === 'true') {
-    app.use('/api', (req, res, next) => {
+    app.use('/api', async (req, res, next) => {
       // Skip auth check for health endpoint
       if (req.path === '/health') {
         return next();
       }
       
-      // Check authentication
+      // Try session authentication first
       if (req.isAuthenticated && req.isAuthenticated()) {
         return next();
       }
       
-      res.status(401).json({ error: 'Unauthorized' });
+      // Try API key authentication second
+      const apiKey = req.headers['x-api-key'];
+      if (apiKey) {
+        return apiKeyAuth(req, res, next);
+      }
+      
+      // No authentication provided
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
     });
   }
 
@@ -201,6 +210,9 @@ async function startHttpServer() {
   
   // Mount nodes management API routes
   app.use('/api/nodes', nodesRouter);
+  
+  // Mount API keys management routes
+  app.use('/api/keys', apiKeysRouter);
 
   // Debug middleware - log ALL requests
   app.use((req, res, next) => {

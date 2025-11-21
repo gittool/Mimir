@@ -20,7 +20,10 @@
         "files:index",
         "files:read",
         "chat:use",
-        "mcp:*"
+        "mcp:*",
+        "keys:read",
+        "keys:write",
+        "keys:delete"
       ]
     },
     "analyst": {
@@ -30,7 +33,8 @@
         "search:execute",
         "orchestration:read",
         "files:read",
-        "chat:use"
+        "chat:use",
+        "keys:read"
       ]
     },
     "viewer": {
