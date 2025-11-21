@@ -10,6 +10,8 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-orange)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
+[Official VSCode Extension](https://marketplace.visualstudio.com/items?itemName=OrneryD.mimir-chat)
+
 **Give your AI agents a persistent memory with relationship understanding.**
 
 Imagine your AI assistant that can remember every task you've discussed, understand how they relate to each other, and recall relevant context from weeks ago. Mimir makes this possible by combining Neo4j's powerful graph database with AI embeddings and the Model Context Protocol. Your AI doesn't just store isolated facts—it builds a living knowledge graph that grows smarter with every conversation. Perfect for developers managing complex projects where tasks depend on each other, contexts overlap, and you need an AI that truly understands your work.
