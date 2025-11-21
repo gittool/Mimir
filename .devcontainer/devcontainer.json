@@ -1,13 +1,18 @@
 {
   "name": "Mimir Development Environment",
-  "dockerComposeFile": "../docker-compose.yml",
-  "service": "mimir-server",
-  "workspaceFolder": "/workspace",
-  
+  // Note: For ARM64 (Apple Silicon/Linux ARM), change first file to "../docker-compose.arm64.yml"
+  // For AMD64/Windows with GPU, change to "../docker-compose.amd64.yml"
+  "dockerComposeFile": [
+    "../docker-compose.arm64.yml",
+    "docker-compose.extend.yml"
+  ],
+  "service": "mimir-dev",
+  "workspaceFolder": "/app",
+
   // Override the default command to keep container running
-  "overrideCommand": true,
+  "overrideCommand": false,
   "shutdownAction": "stopCompose",
-  
+
   // VS Code customizations
   "customizations": {
     "vscode": {
@@ -16,57 +21,57 @@
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "ms-vscode.vscode-typescript-next",
-        
+
         // Docker & Containers
         "ms-azuretools.vscode-docker",
         "ms-vscode-remote.remote-containers",
-        
+
         // Neo4j
         "neo4j.neo4j-vscode",
-        
+
         // Git
         "eamodio.gitlens",
         "github.vscode-pull-request-github",
-        
+
         // Markdown
         "yzhang.markdown-all-in-one",
-        
+
         // Testing
         "hbenl.vscode-test-explorer",
         "orta.vscode-jest",
-        
+
         // React/Frontend
         "dsznajder.es7-react-js-snippets",
         "bradlc.vscode-tailwindcss",
-        
+
         // Utilities
         "christian-kohler.path-intellisense",
         "wayou.vscode-todo-highlight",
         "usernamehw.errorlens"
       ],
-      
+
       "settings": {
         // TypeScript
         "typescript.tsdk": "node_modules/typescript/lib",
         "typescript.enablePromptUseWorkspaceTsdk": true,
-        
+
         // Editor
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "esbenp.prettier-vscode",
         "editor.codeActionsOnSave": {
           "source.fixAll.eslint": "explicit"
         },
-        
+
         // Files
         "files.exclude": {
           "**/node_modules": true,
           "**/build": true,
           "**/.git": false
         },
-        
+
         // Terminal
         "terminal.integrated.defaultProfile.linux": "bash",
-        
+
         // Neo4j
         "neo4j.connectionProfiles": [
           {
@@ -81,28 +86,18 @@
       }
     }
   },
-  
-  // Features to add to the dev container
-  "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "22"
-    },
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
-  },
-  
+
   // Port forwarding
   "forwardPorts": [
-    3000,   // Mimir HTTP server
-    9042,   // Mimir MCP server (external)
-    7474,   // Neo4j Browser
-    7687,   // Neo4j Bolt
-    4141,   // Copilot API
-    11434,  // Ollama
-    5173    // Vite dev server
+    3000, // Mimir HTTP server
+    9042, // Mimir MCP server (external)
+    7474, // Neo4j Browser
+    7687, // Neo4j Bolt
+    4141, // Copilot API
+    11434, // llama-server (embeddings)
+    5173 // Vite dev server
   ],
-  
+
   "portsAttributes": {
     "3000": {
       "label": "Mimir Server",
@@ -117,27 +112,19 @@
       "onAutoForward": "openBrowser"
     }
   },
-  
+
   // Environment variables
   "remoteEnv": {
     "NODE_ENV": "development",
-    "WORKSPACE_ROOT": "/workspace"
+    "WORKSPACE_ROOT": "/workspace",
+    "HOST_WORKSPACE_ROOT": "/workspace"
   },
-  
+
   // Post-create commands
   "postCreateCommand": "npm install && cd frontend && npm install",
-  
-  // Run services on startup (uses smart startup script to detect architecture)
-  "initializeCommand": "./scripts/start.sh up",
-  
-  // Mount the workspace
-  "mounts": [
-    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
-  ],
-  
-  // Run as non-root user
-  "remoteUser": "node",
-  
-  // Lifecycle scripts
-  "postStartCommand": "npm run build"
+
+  // No initializeCommand needed - docker-compose handles service startup
+
+  // Run as non-root user (matches production Dockerfile)
+  "remoteUser": "node"
 }

@@ -1,7 +1,7 @@
-# Development container with all tools installed
+# Development container - extends production image with dev tools
 FROM node:22-alpine
 
-# Install essential development tools
+# Install development tools
 RUN apk add --no-cache \
     git \
     bash \
@@ -11,8 +11,6 @@ RUN apk add --no-cache \
     python3 \
     make \
     g++ \
-    # Neo4j client tools
-    openjdk11-jre \
     # Text editors
     vim \
     nano \
@@ -28,22 +26,21 @@ RUN npm install -g \
     typescript \
     ts-node \
     nodemon \
-    npm-check-updates \
-    eslint \
-    prettier
+    npm-check-updates
 
-# Set bash as default shell
-SHELL ["/bin/bash", "-c"]
+# Set bash as default shell for better compatibility
+ENV SHELL=/bin/bash
 
-# Create non-root user
-RUN addgroup -g 1000 developer && \
-    adduser -D -u 1000 -G developer developer
+WORKDIR /app
 
-# Set working directory
-WORKDIR /workspace
+# Create node_modules directories with proper ownership
+# This ensures anonymous volumes don't create root-owned directories
+RUN mkdir -p /app/node_modules /app/frontend/node_modules && \
+    chown -R node:node /app
 
-# Switch to non-root user
-USER developer
+# Note: node user already exists in node:22-alpine (uid 1000, gid 1000)
+# Switch to non-root user for development (matches production)
+USER node
 
-# Keep container running
+# Keep container running for development
 CMD ["sleep", "infinity"]
