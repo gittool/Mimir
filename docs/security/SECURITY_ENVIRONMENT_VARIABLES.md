@@ -185,14 +185,23 @@ MIMIR_ENABLE_TOKEN_REVOCATION=true
 # Session Management
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Session storage (redis, memory, cookie)
-MIMIR_SESSION_STORAGE=redis
+# Session secret for cookie signing (REQUIRED - change in production!)
 MIMIR_SESSION_SECRET=your-session-secret-generate-with-openssl
-MIMIR_SESSION_TIMEOUT=900  # 15 minutes
-MIMIR_SESSION_COOKIE_NAME=mimir_session
-MIMIR_SESSION_COOKIE_SECURE=true
-MIMIR_SESSION_COOKIE_HTTPONLY=true
-MIMIR_SESSION_COOKIE_SAMESITE=strict
+
+# Session max age in hours (default: 24, set to 0 for never expire)
+# 0 = session never expires (useful for development/testing)
+# 24 = 24 hours (default)
+# 168 = 1 week
+# 720 = 30 days
+MIMIR_SESSION_MAX_AGE_HOURS=24
+
+# Legacy/Future session options (not currently implemented)
+# MIMIR_SESSION_STORAGE=redis
+# MIMIR_SESSION_TIMEOUT=900  # 15 minutes
+# MIMIR_SESSION_COOKIE_NAME=mimir_session
+# MIMIR_SESSION_COOKIE_SECURE=true
+# MIMIR_SESSION_COOKIE_HTTPONLY=true
+# MIMIR_SESSION_COOKIE_SAMESITE=strict
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API Key Authentication (Downstream Services - Simplified)
@@ -407,10 +416,7 @@ MIMIR_JWT_EXPIRATION=3600  # 1 hour
 
 # Session Management
 MIMIR_SESSION_SECRET=your-session-secret
-MIMIR_SESSION_TIMEOUT=900  # 15 minutes
-MIMIR_SESSION_COOKIE_SECURE=true
-MIMIR_SESSION_COOKIE_HTTPONLY=true
-MIMIR_SESSION_COOKIE_SAMESITE=strict
+MIMIR_SESSION_MAX_AGE_HOURS=24  # 0 for never expire
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Role-Based Access Control (RBAC)

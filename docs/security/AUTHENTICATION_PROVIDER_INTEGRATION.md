@@ -410,94 +410,54 @@ src/utils/token-monitor.ts       # Monitor token usage
 
 ## Environment Variables
 
-### Complete OAuth Configuration
+### Complete OAuth Configuration (Simplified with Passport.js)
 
 ```bash
 # ============================================================================
-# AUTHENTICATION PROVIDER CONFIGURATION
+# AUTHENTICATION PROVIDER CONFIGURATION (Passport.js)
 # ============================================================================
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Authentication Mode
+# Feature Flag
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Authentication methods (comma-separated)
-# Options: api-key, oauth, jwt
-MIMIR_AUTH_METHODS=api-key,oauth,jwt
-
-# Default authentication method
-MIMIR_DEFAULT_AUTH_METHOD=oauth
+# Enable security features (set to true to activate authentication)
+MIMIR_ENABLE_SECURITY=true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OAuth Provider Configuration
+# OAuth Provider Configuration (SIMPLIFIED - Only 5 variables!)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Provider type (okta, auth0, azure, google, keycloak, generic)
+# Provider type (okta, auth0, azure, google, keycloak)
 MIMIR_AUTH_PROVIDER=okta
 
-# OAuth 2.0 / OIDC endpoints
-MIMIR_OAUTH_ISSUER=https://your-tenant.okta.com
-MIMIR_OAUTH_AUTHORIZATION_ENDPOINT=https://your-tenant.okta.com/oauth2/v1/authorize
-MIMIR_OAUTH_TOKEN_ENDPOINT=https://your-tenant.okta.com/oauth2/v1/token
-MIMIR_OAUTH_JWKS_URI=https://your-tenant.okta.com/oauth2/v1/keys
-MIMIR_OAUTH_USERINFO_ENDPOINT=https://your-tenant.okta.com/oauth2/v1/userinfo
-MIMIR_OAUTH_REVOCATION_ENDPOINT=https://your-tenant.okta.com/oauth2/v1/revoke
-
-# Client credentials
+# Client credentials (from IdP)
 MIMIR_OAUTH_CLIENT_ID=your-client-id
 MIMIR_OAUTH_CLIENT_SECRET=your-client-secret
-MIMIR_OAUTH_REDIRECT_URI=https://mimir.yourcompany.com/auth/callback
+MIMIR_OAUTH_CALLBACK_URL=https://mimir.yourcompany.com/auth/callback
+MIMIR_OAUTH_ISSUER=https://your-tenant.okta.com
 
-# OAuth scopes
+# Optional: Custom scopes (defaults to: openid profile email)
 MIMIR_OAUTH_SCOPE=openid profile email groups
 
-# OAuth audience (optional, provider-specific)
-MIMIR_OAUTH_AUDIENCE=mimir-api
+# ✅ THAT'S IT! Passport auto-discovers all endpoints from the issuer URL
+# ❌ NO NEED FOR: authorization_endpoint, token_endpoint, jwks_uri, userinfo_endpoint, revocation_endpoint
+# Passport strategies handle endpoint discovery automatically via .well-known/openid-configuration
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Token Configuration
+# Session Management (Passport handles this)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Token storage (redis, memory, database)
-MIMIR_TOKEN_STORAGE=redis
-MIMIR_REDIS_URL=redis://localhost:6379
-MIMIR_REDIS_DB=0
-MIMIR_REDIS_KEY_PREFIX=mimir:tokens:
-
-# Mimir JWT configuration
-MIMIR_JWT_SECRET=your-jwt-secret-key
-MIMIR_JWT_ALGORITHM=RS256
-MIMIR_JWT_ISSUER=https://mimir.yourcompany.com
-MIMIR_JWT_AUDIENCE=mimir-api
-
-# Token lifetimes (seconds)
-MIMIR_ACCESS_TOKEN_LIFETIME=3600      # 1 hour
-MIMIR_REFRESH_TOKEN_LIFETIME=2592000  # 30 days
-MIMIR_ID_TOKEN_LIFETIME=3600          # 1 hour
-
-# Token refresh
-MIMIR_ENABLE_TOKEN_REFRESH=true
-MIMIR_REFRESH_TOKEN_ROTATION=true  # Issue new refresh token on refresh
-
-# Token revocation
-MIMIR_ENABLE_TOKEN_REVOCATION=true
-MIMIR_REVOCATION_ENDPOINT=/auth/revoke
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Session Management
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Session storage (redis, memory, cookie)
-MIMIR_SESSION_STORAGE=redis
-MIMIR_SESSION_SECRET=your-session-secret
+# Session storage (Passport + connect-redis)
+MIMIR_SESSION_SECRET=your-session-secret-generate-with-openssl
 MIMIR_SESSION_TIMEOUT=900  # 15 minutes
-MIMIR_SESSION_COOKIE_NAME=mimir_session
-MIMIR_SESSION_COOKIE_SECURE=true
-MIMIR_SESSION_COOKIE_HTTPONLY=true
-MIMIR_SESSION_COOKIE_SAMESITE=strict
+
+# Redis for session storage
+MIMIR_REDIS_URL=redis://redis:6379
+MIMIR_REDIS_DB=0
 
 # ─────────────────────────────────────────────────────────────────────────────
-# API Key Authentication (Downstream Services)
+# API Key Authentication (Downstream Services - Simplified)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # API keys for trusted services (comma-separated for multiple keys)
@@ -507,57 +467,26 @@ MIMIR_API_KEYS=key1,key2,key3
 MIMIR_API_KEY=your-api-key-here
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Provider-Specific Configuration
+# Security Features (Passport handles these automatically)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Okta
-MIMIR_OKTA_DOMAIN=your-tenant.okta.com
-MIMIR_OKTA_AUTHORIZATION_SERVER=default
+# ✅ PKCE - Passport strategies enable this by default
+# ✅ State parameter - Passport generates and validates automatically
+# ✅ Nonce - Passport OIDC strategies handle this
+# ✅ Token validation - Passport validates JWT signatures automatically
+# ✅ Token refresh - Passport handles refresh tokens automatically
 
-# Auth0
-MIMIR_AUTH0_DOMAIN=your-tenant.auth0.com
-MIMIR_AUTH0_AUDIENCE=https://mimir.yourcompany.com/api
-
-# Azure AD
-MIMIR_AZURE_TENANT_ID=your-tenant-id
-MIMIR_AZURE_TENANT_NAME=yourcompany.onmicrosoft.com
-
-# Google
-MIMIR_GOOGLE_HOSTED_DOMAIN=yourcompany.com
-
-# Keycloak
-MIMIR_KEYCLOAK_REALM=mimir
-MIMIR_KEYCLOAK_SERVER_URL=https://keycloak.yourcompany.com
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Security
-# ─────────────────────────────────────────────────────────────────────────────
-
-# PKCE (Proof Key for Code Exchange) - recommended for public clients
-MIMIR_OAUTH_ENABLE_PKCE=true
-
-# State parameter validation
-MIMIR_OAUTH_ENABLE_STATE=true
-MIMIR_OAUTH_STATE_TIMEOUT=600  # 10 minutes
-
-# Nonce validation (OIDC)
-MIMIR_OAUTH_ENABLE_NONCE=true
-
-# Token binding
-MIMIR_ENABLE_TOKEN_BINDING=true
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Monitoring & Logging
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Log authentication events
-MIMIR_LOG_AUTH_EVENTS=true
-MIMIR_AUTH_LOG_LEVEL=info  # debug, info, warn, error
-
-# Metrics
-MIMIR_ENABLE_AUTH_METRICS=true
-MIMIR_AUTH_METRICS_ENDPOINT=/metrics/auth
+# No configuration needed! Passport does it all.
 ```
+
+### Environment Variable Count Comparison
+
+| Approach | Variables Required | Complexity |
+|----------|-------------------|------------|
+| **Custom OAuth** | ~25 variables | High - manual endpoint config, token management, validation |
+| **Passport.js** | **~10 variables** | **Low - auto-discovery, built-in validation** |
+
+**Reduction**: 60% fewer environment variables with Passport.js!
 
 ### PCTX Configuration (Downstream)
 

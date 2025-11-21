@@ -26,6 +26,7 @@ This directory contains comprehensive security documentation for Mimir, covering
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
+| **[Passport.js Quick Start](./PASSPORT_QUICK_START.md)** ⭐ | Get auth working in 15 minutes | Everyone |
 | **[Authentication Provider Integration](./AUTHENTICATION_PROVIDER_INTEGRATION.md)** | Complete OAuth/OIDC integration guide | Architects, DevOps |
 | **[Security Environment Variables](./SECURITY_ENVIRONMENT_VARIABLES.md)** | All environment variables by security phase | DevOps, Admins |
 
@@ -68,7 +69,7 @@ MIMIR_DEFAULT_AUTH_METHOD=oauth
 
 **Step 2: Follow the Appropriate Guide**
 
-- **4-hour setup**: [Security Quick Start](./SECURITY_QUICK_START.md)
+- **15-minute setup**: [Passport.js Quick Start](./PASSPORT_QUICK_START.md) ⭐ **START HERE**
 - **OAuth integration**: [Authentication Provider Integration](./AUTHENTICATION_PROVIDER_INTEGRATION.md)
 - **Reverse proxy**: [Reverse Proxy Security Guide](./REVERSE_PROXY_SECURITY_GUIDE.md)
 - **Full enterprise**: [Enterprise Readiness Audit](./ENTERPRISE_READINESS_AUDIT.md)

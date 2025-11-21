@@ -9,97 +9,58 @@
 ## 🎯 Authentication Flow Diagram
 
 ```mermaid
-graph TB
-    subgraph "External Identity Providers"
-        Okta[Okta]
-        Auth0[Auth0]
-        Azure[Azure AD]
-        Google[Google OAuth]
-        Keycloak[Keycloak]
+graph LR
+    subgraph Users["👥 Users"]
+        User[End User]
     end
 
-    subgraph "Mimir Authentication Layer"
-        AuthMiddleware[Auth Middleware<br/>src/middleware/auth.ts]
-        OAuthHandler[OAuth Handler<br/>src/middleware/oauth.ts]
-        TokenValidator[Token Validator<br/>src/utils/token-validator.ts]
-        JWTIssuer[JWT Issuer<br/>src/utils/jwt-issuer.ts]
-        
-        AuthAPI[Auth API<br/>src/api/auth-api.ts]
-        ServiceAccountAPI[Service Account API<br/>src/api/service-accounts-api.ts]
-        
-        Redis[(Redis<br/>Token Storage)]
+    subgraph IdP["🔐 Identity Providers"]
+        OAuth[Okta / Auth0 / Azure / Google]
     end
 
-    subgraph "Mimir HTTP Server"
-        HTTPServer[HTTP Server<br/>src/http-server.ts]
-        NodesAPI[Nodes API<br/>src/api/nodes-api.ts]
-        OrchestrationAPI[Orchestration API<br/>src/api/orchestration-api.ts]
-        MCPAPI[MCP API<br/>src/index.ts]
+    subgraph Mimir["🏛️ Mimir Server"]
+        Auth[Auth Middleware]
+        APIs[Protected APIs]
+        Redis[(Session Store)]
     end
 
-    subgraph "Downstream Services"
-        PCTX[PCTX Server<br/>Port 8080]
-        MCPClients[MCP Clients<br/>Cursor/VSCode]
-        CustomServices[Custom Services]
+    subgraph Services["🔧 Downstream Services"]
+        PCTX[PCTX]
+        Tools[Other Tools]
     end
 
-    subgraph "Configuration"
-        EnvVars[Environment Variables<br/>.env / docker-compose.yml]
-        ProviderConfig[Provider Config<br/>src/config/oauth-providers.ts]
-    end
+    %% User Flow
+    User -->|1. Login| OAuth
+    OAuth -->|2. OAuth Token| Auth
+    Auth -->|3. Validate & Store| Redis
+    Auth -->|4. Access| APIs
 
-    %% Upstream Flow (Users → Mimir)
-    Okta -->|OAuth Token| AuthMiddleware
-    Auth0 -->|OAuth Token| AuthMiddleware
-    Azure -->|OAuth Token| AuthMiddleware
-    Google -->|OAuth Token| AuthMiddleware
-    Keycloak -->|OAuth Token| AuthMiddleware
+    %% Service Flow
+    PCTX -->|API Key| Auth
+    Tools -->|API Key| Auth
 
-    AuthMiddleware --> OAuthHandler
-    OAuthHandler --> TokenValidator
-    TokenValidator -->|Validate JWT| Okta
-    TokenValidator -->|Store Session| Redis
+    %% Styling (Dark Mode Compatible)
+    classDef userStyle fill:#1a237e,stroke:#3f51b5,stroke-width:3px,color:#fff
+    classDef idpStyle fill:#e65100,stroke:#ff6f00,stroke-width:3px,color:#fff
+    classDef mimirStyle fill:#1b5e20,stroke:#4caf50,stroke-width:3px,color:#fff
+    classDef serviceStyle fill:#4a148c,stroke:#9c27b0,stroke-width:3px,color:#fff
 
-    %% Auth Endpoints
-    OAuthHandler --> AuthAPI
-    AuthAPI -->|/auth/login| OAuthHandler
-    AuthAPI -->|/auth/callback| OAuthHandler
-    AuthAPI -->|/auth/refresh| TokenValidator
-    AuthAPI -->|/auth/revoke| Redis
+    class User userStyle
+    class OAuth idpStyle
+    class Auth,APIs,Redis mimirStyle
+    class PCTX,Tools serviceStyle
+```
 
-    %% Service Account Management
-    ServiceAccountAPI -->|Issue Mimir JWT| JWTIssuer
-    JWTIssuer -->|Store Token| Redis
+### Two Simple Flows:
 
-    %% HTTP Server Protection
-    HTTPServer --> AuthMiddleware
-    AuthMiddleware --> NodesAPI
-    AuthMiddleware --> OrchestrationAPI
-    AuthMiddleware --> MCPAPI
+**1. User Authentication (OAuth)**
+```
+User → OAuth Provider → Mimir validates token → Access granted
+```
 
-    %% Downstream Flow (Mimir → Services)
-    PCTX -->|Service Account| ServiceAccountAPI
-    MCPClients -->|API Key / OAuth| AuthMiddleware
-    CustomServices -->|Mimir JWT| TokenValidator
-
-    %% Configuration
-    EnvVars --> ProviderConfig
-    ProviderConfig --> OAuthHandler
-    EnvVars --> HTTPServer
-
-    %% Styling
-    classDef provider fill:#e1f5ff,stroke:#01579b,stroke-width:2px
-    classDef mimir fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    classDef downstream fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef config fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    classDef storage fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-
-    class Okta,Auth0,Azure,Google,Keycloak provider
-    class AuthMiddleware,OAuthHandler,TokenValidator,JWTIssuer,AuthAPI,ServiceAccountAPI mimir
-    class HTTPServer,NodesAPI,OrchestrationAPI,MCPAPI mimir
-    class PCTX,MCPClients,CustomServices downstream
-    class EnvVars,ProviderConfig config
-    class Redis storage
+**2. Service Authentication (API Key)**
+```
+PCTX/Tools → API Key → Mimir validates → Access granted
 ```
 
 ---
@@ -108,16 +69,22 @@ graph TB
 
 ### Files to Create
 
-| File | Purpose | Priority |
-|------|---------|----------|
-| `src/middleware/auth.ts` | Main authentication middleware (checks API keys, OAuth tokens) | **HIGH** |
-| `src/middleware/oauth.ts` | OAuth 2.0 / OIDC flow implementation (authorization code, callback) | **HIGH** |
-| `src/utils/token-validator.ts` | JWT validation against IdP JWKS | **HIGH** |
-| `src/api/auth-api.ts` | Auth endpoints (`/auth/login`, `/auth/callback`, `/auth/refresh`) | **HIGH** |
-| `src/api/api-keys-api.ts` | API key management (create, list, revoke) | **MEDIUM** |
-| `src/config/oauth-providers.ts` | Provider configurations (Okta, Auth0, Azure, Google, Keycloak) | **HIGH** |
+| File | Purpose | Priority | Lines of Code |
+|------|---------|----------|---------------|
+| `src/config/passport.ts` | Passport.js configuration (OAuth + API key strategies) | **HIGH** | ~80 lines |
+| `src/api/auth-api.ts` | Auth endpoints (`/auth/login`, `/auth/callback`, `/auth/logout`) | **HIGH** | ~40 lines |
+| `src/middleware/auth.ts` | Auth middleware using Passport | **HIGH** | ~20 lines |
+| `src/api/api-keys-api.ts` | API key management (create, list, revoke) | **MEDIUM** | ~50 lines |
+| `src/http-server.ts` | Initialize Passport | **HIGH** | ~10 lines |
 
-**Simplified**: Removed JWT issuer, service accounts, provider abstraction layers. Direct OAuth validation only.
+**Total**: ~200 lines of code vs ~1000+ lines custom implementation
+
+**Simplified with Passport.js**: 
+- ✅ No custom OAuth flow implementation
+- ✅ No manual JWT validation
+- ✅ No token management code
+- ✅ No provider abstraction layers
+- ✅ Passport handles everything automatically
 
 ### Files to Modify
 
@@ -275,34 +242,38 @@ services:
 
 ## 🎯 Implementation Checklist
 
-### Week 1: Basic OAuth (One Provider)
+### Week 1: Basic OAuth with Passport.js (One Provider)
 
-- [ ] Create `src/middleware/auth.ts` (API key + OAuth validation)
-- [ ] Create `src/middleware/oauth.ts` (authorization code flow)
-- [ ] Create `src/utils/token-validator.ts` (JWT validation)
-- [ ] Create `src/api/auth-api.ts` (`/auth/login`, `/auth/callback`, `/auth/refresh`)
-- [ ] Create `src/config/oauth-providers.ts` (Okta config)
-- [ ] Modify `src/http-server.ts` (apply auth middleware)
+- [ ] Install Passport.js: `npm install passport passport-oauth2 express-session connect-redis`
+- [ ] Create `src/config/passport.ts` (Passport config with OAuth strategy - 50 lines)
+- [ ] Create `src/api/auth-api.ts` (`/auth/login`, `/auth/callback`, `/auth/logout` - 40 lines)
+- [ ] Create `src/middleware/auth.ts` (Passport middleware - 20 lines)
+- [ ] Modify `src/http-server.ts` (initialize Passport - 10 lines)
 - [ ] Add Redis to `docker-compose.yml`
-- [ ] Add OAuth env vars to `.env` and `env.example`
+- [ ] Add **5 OAuth env vars** to `.env` and `env.example` (vs 15+ custom)
 - [ ] Test OAuth login with Okta
 
-### Week 2: Multi-Provider Support
+**Total**: ~120 lines of code vs ~400+ lines custom
 
-- [ ] Create `src/providers/base-provider.ts` (abstract class)
-- [ ] Create `src/providers/okta.ts`
-- [ ] Create `src/providers/auth0.ts`
-- [ ] Create `src/providers/azure.ts`
-- [ ] Create `src/providers/google.ts`
-- [ ] Create `src/providers/keycloak.ts`
-- [ ] Update `src/config/oauth-providers.ts` (provider factory)
+### Week 2: Multi-Provider Support with Passport Strategies
+
+- [ ] Install provider strategies: `npm install passport-okta-oauth passport-auth0 passport-azure-ad passport-google-oauth20`
+- [ ] Add Auth0 strategy to `src/config/passport.ts` (10 lines)
+- [ ] Add Azure AD strategy to `src/config/passport.ts` (10 lines)
+- [ ] Add Google strategy to `src/config/passport.ts` (10 lines)
+- [ ] Add provider selection logic (20 lines)
 - [ ] Test all providers
 
-### Week 3: API Key Management
+**Total**: ~50 lines of code vs ~200+ lines custom (provider implementations)
 
-- [ ] Create `src/api/api-keys-api.ts` (create, list, revoke API keys)
-- [ ] Modify `src/middleware/auth.ts` (add API key validation)
+### Week 3: API Key Management with Passport
+
+- [ ] Create custom Passport API key strategy in `src/config/passport.ts` (30 lines)
+- [ ] Create `src/api/api-keys-api.ts` (create, list, revoke API keys - 50 lines)
+- [ ] Configure Passport to support both OAuth and API keys (5 lines)
 - [ ] Test PCTX authentication with API key
+
+**Total**: ~85 lines of code vs ~150+ lines custom
 
 ### Week 4: Token Management
 
@@ -361,7 +332,61 @@ services:
 
 ---
 
-**Document Version**: 1.0.0  
+---
+
+## 📊 Passport.js Benefits Summary
+
+### Code Reduction
+
+| Metric | Custom Implementation | With Passport.js | Savings |
+|--------|----------------------|------------------|---------|
+| **Total Lines of Code** | ~1,000+ lines | ~255 lines | **75% reduction** |
+| **Files to Create** | 13 files | 5 files | **62% fewer files** |
+| **Environment Variables** | ~25 variables | ~10 variables | **60% fewer vars** |
+| **Implementation Time** | 4 weeks | 3 weeks | **25% faster** |
+| **Maintenance Burden** | High (custom OAuth code) | Low (Passport updates) | **Significantly lower** |
+
+### What Passport.js Handles Automatically
+
+- ✅ **OAuth 2.0 Authorization Code Flow** - Complete implementation
+- ✅ **PKCE** - Proof Key for Code Exchange (security)
+- ✅ **State Parameter** - CSRF protection
+- ✅ **Nonce Validation** - Replay attack prevention (OIDC)
+- ✅ **JWT Signature Validation** - Against IdP JWKS
+- ✅ **Token Refresh** - Automatic refresh token handling
+- ✅ **Session Management** - With Redis/memory stores
+- ✅ **Provider Auto-Discovery** - `.well-known/openid-configuration`
+- ✅ **Multiple Strategies** - OAuth + API keys simultaneously
+- ✅ **Error Handling** - Standardized error responses
+
+### What You Still Control
+
+- ✅ **API Key Management** - Custom logic for your use case
+- ✅ **Authorization** - Who can access what (RBAC)
+- ✅ **Session Configuration** - Timeout, storage, cookies
+- ✅ **Provider Selection** - Which OAuth providers to support
+- ✅ **User Profile Mapping** - How to store user data
+
+### Dependencies (All MIT Licensed)
+
+```json
+{
+  "passport": "^0.7.0",
+  "passport-oauth2": "^1.8.0",
+  "passport-okta-oauth": "^2.0.0",
+  "passport-auth0": "^1.4.4",
+  "passport-azure-ad": "^4.3.5",
+  "passport-google-oauth20": "^2.0.0",
+  "express-session": "^1.18.0",
+  "connect-redis": "^7.1.0"
+}
+```
+
+**Total package size**: ~2MB (minified)
+
+---
+
+**Document Version**: 1.1.0  
 **Last Updated**: 2025-11-21  
 **Maintainer**: Security Team  
-**Status**: Implementation Reference
+**Status**: Implementation Reference (Passport.js Recommended)
