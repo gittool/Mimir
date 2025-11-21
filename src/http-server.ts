@@ -137,7 +137,6 @@ async function startHttpServer() {
     
     // Parse session max age from env (in hours, 0 = never expire)
     const sessionMaxAgeHours = parseInt(process.env.MIMIR_SESSION_MAX_AGE_HOURS || '24', 10);
-    const sessionMaxAge = sessionMaxAgeHours === 0 ? undefined : sessionMaxAgeHours * 60 * 60 * 1000;
     
     if (sessionMaxAgeHours === 0) {
       console.log('🔓 Session configured to never expire');
@@ -145,15 +144,22 @@ async function startHttpServer() {
       console.log(`⏱️  Session max age: ${sessionMaxAgeHours} hours`);
     }
     
+    // Build cookie config - omit maxAge entirely for never-expire sessions
+    const cookieConfig: any = {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true
+    };
+    
+    // Only add maxAge if sessions should expire
+    if (sessionMaxAgeHours !== 0) {
+      cookieConfig.maxAge = sessionMaxAgeHours * 60 * 60 * 1000;
+    }
+    
     app.use(session({
       secret: process.env.MIMIR_SESSION_SECRET || 'dev-secret-change-me',
       resave: false,
       saveUninitialized: false,
-      cookie: { 
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: sessionMaxAge
-      }
+      cookie: cookieConfig
     }));
 
     app.use(passport.initialize());
