@@ -445,16 +445,13 @@ MIMIR_OAUTH_SCOPE=openid profile email groups
 # Passport strategies handle endpoint discovery automatically via .well-known/openid-configuration
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Session Management (Passport handles this)
+# Stateless Authentication (JWT/OAuth)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Session storage (Passport + connect-redis)
-MIMIR_SESSION_SECRET=your-session-secret-generate-with-openssl
-MIMIR_SESSION_TIMEOUT=900  # 15 minutes
+# JWT secret for signing tokens
+MIMIR_JWT_SECRET=your-jwt-secret-generate-with-openssl
 
-# Redis for session storage
-MIMIR_REDIS_URL=redis://redis:6379
-MIMIR_REDIS_DB=0
+# Note: No session storage - all authentication is stateless via JWT/OAuth tokens
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API Key Authentication (Downstream Services - Simplified)

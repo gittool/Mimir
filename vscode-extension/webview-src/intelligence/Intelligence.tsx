@@ -232,7 +232,20 @@ export function Intelligence() {
       return;
     }
 
-    const eventSource = new EventSource(`${apiUrl}/api/indexing-progress`);
+    // Build SSE URL with auth token as query parameter (EventSource can't send custom headers)
+    let sseUrl = `${apiUrl}/api/indexing-progress`;
+    
+    // Extract Bearer token from Authorization header if present
+    if (authHeadersRef.current?.Authorization) {
+      const authHeader = authHeadersRef.current.Authorization;
+      const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+      sseUrl += `?access_token=${encodeURIComponent(token)}`;
+      console.log('[Intelligence] SSE connecting with auth token');
+    } else {
+      console.log('[Intelligence] SSE connecting without auth (security may be disabled)');
+    }
+
+    const eventSource = new EventSource(sseUrl);
 
     eventSource.onmessage = (event) => {
       if (event.data && event.data !== ': heartbeat') {
@@ -267,7 +280,7 @@ export function Intelligence() {
     return () => {
       eventSource.close();
     };
-  }, [apiUrl, loadFolders, configReceived]);
+  }, [apiUrl, loadFolders, configReceived, authHeaders]);
 
   const handleAddFolder = () => {
     // Ask extension to open folder picker

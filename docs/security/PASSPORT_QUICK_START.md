@@ -139,7 +139,7 @@ import authRouter from './api/auth-api.js';
 // Add session middleware (only if security enabled)
 if (process.env.MIMIR_ENABLE_SECURITY === 'true') {
   app.use(session({
-    secret: process.env.MIMIR_SESSION_SECRET || 'dev-secret-change-me',
+    secret: process.env.MIMIR_JWT_SECRET || 'dev-secret-change-me',
     resave: false,
     saveUninitialized: false,
     cookie: { 
@@ -185,7 +185,7 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true') {
 # Enable security with local auth
 MIMIR_ENABLE_SECURITY=true
 NODE_ENV=development
-MIMIR_SESSION_SECRET=dev-secret-change-in-production
+MIMIR_JWT_SECRET=dev-secret-change-in-production
 ```
 
 **2. Start Mimir**:
@@ -249,7 +249,7 @@ MIMIR_OAUTH_ISSUER=https://accounts.google.com
 MIMIR_OAUTH_USERINFO_URL=https://accounts.google.com/oauth2/v1/userinfo  # Optional
 
 # Session
-MIMIR_SESSION_SECRET=generate-with-openssl-rand-base64-32
+MIMIR_JWT_SECRET=generate-with-openssl-rand-base64-32
 ```
 
 **3. Start Mimir**:
@@ -343,7 +343,7 @@ export function Login() {
 ```bash
 MIMIR_ENABLE_SECURITY=true
 NODE_ENV=development
-MIMIR_SESSION_SECRET=dev-secret
+MIMIR_JWT_SECRET=dev-secret
 ```
 
 ### Production with OAuth (7 variables)
@@ -355,7 +355,7 @@ MIMIR_OAUTH_CLIENT_ID=your-client-id
 MIMIR_OAUTH_CLIENT_SECRET=your-client-secret
 MIMIR_OAUTH_CALLBACK_URL=https://mimir.yourcompany.com/auth/callback
 MIMIR_OAUTH_ISSUER=https://accounts.google.com
-MIMIR_SESSION_SECRET=your-secure-secret
+MIMIR_JWT_SECRET=your-secure-secret
 ```
 
 ---

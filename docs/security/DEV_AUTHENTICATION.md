@@ -94,7 +94,7 @@ To test RBAC with different roles:
 
 Dev authentication uses session cookies:
 
-- **Session duration**: 24 hours (configurable via `MIMIR_SESSION_SECRET`)
+- **Session duration**: 24 hours (configurable via `MIMIR_JWT_SECRET`)
 - **Logout**: POST to `/auth/logout` or close browser
 - **Session storage**: In-memory (sessions lost on server restart)
 

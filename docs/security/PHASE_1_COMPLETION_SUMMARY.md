@@ -74,20 +74,18 @@ Mimir has successfully completed **Phase 1 & 2 Security Implementation**, achiev
 - `config/rbac.json` - Default RBAC configuration
 - `testing/test-rbac.sh` - RBAC test suite
 
-### 3. Session Management
+### 3. Stateless Authentication
 
-**Configurable Session Behavior**
+**Stateless Token Management**
 - ✅ HTTP-only cookies (prevents XSS)
 - ✅ Secure flag in production (HTTPS only)
-- ✅ Configurable expiration: `MIMIR_SESSION_MAX_AGE_HOURS`
-  - `0` = never expire (development)
-  - `1` = 1 hour (high security)
-  - `24` = 24 hours (default)
-  - `168` = 1 week, `720` = 30 days
+- ✅ JWT tokens for dev login (no sessions)
+- ✅ OAuth access tokens for external providers
+- ✅ No server-side session storage
 
 **Implementation:**
-- `src/http-server.ts` - Session middleware configuration
-- `docs/security/SESSION_CONFIGURATION.md` - Session guide
+- `src/http-server.ts` - Cookie configuration
+- `src/api/auth-api.ts` - JWT/OAuth token handling
 
 ### 4. Protected Routes
 
@@ -115,14 +113,14 @@ Mimir has successfully completed **Phase 1 & 2 Security Implementation**, achiev
 - ✅ Configurable expiration (default: 90 days)
 - ✅ Revocation support
 - ✅ Usage tracking (last used, usage count)
-- ✅ **Periodic re-validation** against user's current roles
+- ✅ **Stateless validation** against user's current roles
 
-**Periodic Re-validation (Security Enhancement)**
-- API keys are re-validated based on `MIMIR_SESSION_MAX_AGE_HOURS`
-- Ensures keys can't have more permissions than user currently has
-- Example: User demoted from `admin` → `developer`, API key automatically downgraded
-- Balances security (periodic checks) with performance (cached permissions)
-- Works offline (uses cached permissions if user data unavailable)
+**Stateless Validation (Security Enhancement)**
+- API keys are validated on every request (no caching)
+- Ensures keys always reflect user's current permissions
+- Example: User demoted from `admin` → `developer`, API key permissions automatically reduced
+- No session storage required - fully stateless
+- Works with any authentication provider (OAuth, OIDC, etc.)
 
 **Implementation:**
 - `src/api/api-keys-api.ts` - Key generation, listing, revocation
@@ -288,8 +286,7 @@ MIMIR_DEV_USER_VIEWER=viewer:viewer:viewer
 # .env
 MIMIR_ENABLE_SECURITY=true
 MIMIR_ENABLE_RBAC=true
-MIMIR_SESSION_SECRET=$(openssl rand -base64 32)
-MIMIR_SESSION_MAX_AGE_HOURS=24
+MIMIR_JWT_SECRET=$(openssl rand -base64 32)
 
 # OAuth Provider (example: Okta)
 MIMIR_OAUTH_PROVIDER=okta
@@ -311,8 +308,7 @@ MIMIR_RBAC_CLAIM_PATH=groups  # or 'roles' depending on IdP
 # .env
 MIMIR_ENABLE_SECURITY=true
 MIMIR_ENABLE_RBAC=true
-MIMIR_SESSION_SECRET=dev-secret-12345
-MIMIR_SESSION_MAX_AGE_HOURS=0  # Never expire
+MIMIR_JWT_SECRET=dev-secret-12345
 
 # Dev Users (pre-configured)
 MIMIR_DEV_USER_ADMIN=admin:admin:admin,developer,analyst

@@ -182,28 +182,14 @@ MIMIR_REFRESH_TOKEN_ROTATION=true
 MIMIR_ENABLE_TOKEN_REVOCATION=true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Session Management
+# Stateless Authentication (JWT/OAuth)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Session secret for cookie signing (REQUIRED - change in production!)
-MIMIR_SESSION_SECRET=your-session-secret-generate-with-openssl
+# JWT secret for signing tokens (REQUIRED - change in production!)
+MIMIR_JWT_SECRET=your-jwt-secret-generate-with-openssl
 
-# Session max age in hours (default: 24, set to 0 for never expire)
-# Also controls API key re-validation interval for security
-# 0 = session never expires, API keys never re-validated (development)
-# 1 = 1 hour (high security, frequent re-validation)
-# 24 = 24 hours (default, daily re-validation)
-# 168 = 1 week
-# 720 = 30 days
-MIMIR_SESSION_MAX_AGE_HOURS=24
-
-# Legacy/Future session options (not currently implemented)
-# MIMIR_SESSION_STORAGE=redis
-# MIMIR_SESSION_TIMEOUT=900  # 15 minutes
-# MIMIR_SESSION_COOKIE_NAME=mimir_session
-# MIMIR_SESSION_COOKIE_SECURE=true
-# MIMIR_SESSION_COOKIE_HTTPONLY=true
-# MIMIR_SESSION_COOKIE_SAMESITE=strict
+# Note: No session storage - all authentication is stateless via JWT/OAuth tokens
+# Tokens are stored in HTTP-only cookies with secure flag in production
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API Key Authentication (Downstream Services - Simplified)
@@ -416,9 +402,7 @@ MIMIR_JWT_SECRET=your-jwt-secret-key
 MIMIR_JWT_ALGORITHM=RS256
 MIMIR_JWT_EXPIRATION=3600  # 1 hour
 
-# Session Management
-MIMIR_SESSION_SECRET=your-session-secret
-MIMIR_SESSION_MAX_AGE_HOURS=24  # 0 for never expire
+# Note: No session management - all authentication is stateless via JWT/OAuth tokens
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Role-Based Access Control (RBAC)
@@ -446,15 +430,10 @@ MIMIR_RBAC_READONLY_ROLE=readonly
 # - Revoke keys via DELETE /api/keys/:keyId (requires keys:delete permission)
 # - Keys inherit user's roles by default (can specify custom permissions)
 # - Configurable expiration (default: 90 days)
-# - Periodic re-validation based on MIMIR_SESSION_MAX_AGE_HOURS
+# - Stateless validation: keys are validated against current user roles on each request
 #
-# Re-validation behavior:
-# - MIMIR_SESSION_MAX_AGE_HOURS=24 → API keys re-validated every 24 hours
-# - MIMIR_SESSION_MAX_AGE_HOURS=1  → API keys re-validated every hour (high security)
-# - MIMIR_SESSION_MAX_AGE_HOURS=0  → API keys never re-validated (development only)
-#
-# Re-validation ensures API keys can't have more permissions than user currently has.
-# Example: User demoted from admin → developer, API key automatically downgraded.
+# Note: API keys are validated stateless - no periodic re-validation needed
+# Keys are checked against the user's current roles/permissions on every request
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Audit Logging

@@ -87,10 +87,11 @@
   - Supports: Okta, Auth0, Azure AD, Google Workspace, Keycloak
   - Environment-driven configuration (no code changes needed)
   - Development mode with local username/password
-- ✅ **Session Management** 
-  - HTTP-only cookies with configurable expiration
+- ✅ **Stateless Authentication** 
+  - JWT tokens with HTTP-only cookies
+  - OAuth access tokens for external providers
+  - No server-side sessions or database storage
   - Secure flag in production (HTTPS)
-  - Never-expire option for development (`MIMIR_SESSION_MAX_AGE_HOURS=0`)
 - ✅ **Role-Based Access Control (RBAC)**
   - Claims-based authorization from IdP (JWT roles/groups)
   - Configurable role-to-permission mappings
@@ -172,7 +173,7 @@
 | **Person/Entity Authentication (§164.312(d))** | ✅ **SSO Authentication** | ✅ **Implemented** | ✅ DONE |
 | **Transmission Security (§164.312(e)(1))** | ⚠️ HTTP (HTTPS via proxy) | **Implement HTTPS/TLS 1.2+ reverse proxy** | HIGH |
 | **Encryption at Rest** | ✅ Docker volumes | Need FIPS 140-2 compliant encryption | HIGH |
-| **Automatic Logoff** | ✅ **Session timeout** | ✅ **Configurable via MIMIR_SESSION_MAX_AGE_HOURS** | ✅ DONE |
+| **Automatic Logoff** | ✅ **Token expiration** | ✅ **Configurable via JWT/OAuth token expiration** | ✅ DONE |
 | **Emergency Access** | ⚠️ Admin role exists | Need documented break-glass procedure | MEDIUM |
 | **Unique User IDs** | ✅ **Individual user accounts via SSO** | ✅ **Implemented** | ✅ DONE |
 | **Role-Based Access** | ✅ **RBAC with permissions** | ✅ **Implemented** | ✅ DONE |
@@ -252,11 +253,11 @@
 - Wildcard permission support (`*`, `nodes:*`, etc.)
 - Per-route middleware enforcement (`requirePermission`, `requireAnyPermission`, `requireAllPermissions`)
 
-**Session Management**
+**Stateless Authentication**
 - HTTP-only cookies with secure flag in production
-- Configurable expiration via `MIMIR_SESSION_MAX_AGE_HOURS`
-- Never-expire option for development (`MIMIR_SESSION_MAX_AGE_HOURS=0`)
-- Automatic session cleanup
+- JWT tokens for dev login (stateless, no sessions)
+- OAuth access tokens for external providers
+- No server-side session storage or database persistence
 
 **Protected Routes**
 - UI routes redirect to `/login` when unauthenticated
@@ -343,8 +344,7 @@
 # .env
 MIMIR_ENABLE_SECURITY=true
 MIMIR_ENABLE_RBAC=true
-MIMIR_SESSION_SECRET=<generate-with-openssl>
-MIMIR_SESSION_MAX_AGE_HOURS=24
+MIMIR_JWT_SECRET=<generate-with-openssl>
 
 # OAuth Provider (example: Okta)
 MIMIR_OAUTH_PROVIDER=okta

@@ -14,6 +14,11 @@ const JWT_SECRET: string = process.env.MIMIR_JWT_SECRET || (() => {
   return 'dev-only-secret-not-for-production';
 })();
 
+// Log JWT secret status on startup (first 8 chars for verification)
+if (process.env.MIMIR_ENABLE_SECURITY === 'true') {
+  console.log(`[Auth] JWT_SECRET configured: ${JWT_SECRET.substring(0, 8)}... (${JWT_SECRET.length} chars)`);
+}
+
 /**
  * POST /auth/token
  * OAuth 2.0 RFC 6749 compliant token endpoint
@@ -89,13 +94,19 @@ router.post('/auth/token', async (req, res) => {
 
 // Development: Login with username/password - STATELESS JWT (for browser UI)
 router.post('/auth/login', async (req, res, next) => {
+  console.log('[Auth] /auth/login POST - credentials received');
+  
   passport.authenticate('local', async (err: any, user: any, info: any) => {
     if (err) {
+      console.error('[Auth] Login authentication error:', err);
       return res.status(500).json({ error: 'Authentication error', details: err.message });
     }
     if (!user) {
+      console.warn('[Auth] Login failed - invalid credentials:', info?.message);
       return res.status(401).json({ error: 'Invalid credentials', message: info?.message || 'Authentication failed' });
     }
+    
+    console.log(`[Auth] User authenticated: ${user.email} (${user.id})`);
     
     try {
       // STATELESS: Generate JWT token (no database storage)
@@ -111,15 +122,28 @@ router.post('/auth/login', async (req, res, next) => {
       };
 
       const jwtToken = jwt.sign(payload, JWT_SECRET, { algorithm: 'HS256' });
+      console.log(`[Auth] JWT generated for ${user.email}, expires in ${expiresInDays} days`);
       
       // Set JWT in HTTP-only cookie (same cookie name as OAuth for consistency)
+      // Safari-compatible settings: use 'none' for sameSite in dev, explicitly set path
+      const isProduction = process.env.NODE_ENV === 'production';
+      const sameSiteValue: 'lax' | 'none' = isProduction ? 'lax' : 'none';
+      const secureValue = isProduction || sameSiteValue === 'none'; // Safari requires secure=true when sameSite=none
+      
       res.cookie('mimir_oauth_token', jwtToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: secureValue,
+        sameSite: sameSiteValue,
+        path: '/',
         maxAge: expiresInDays * 24 * 60 * 60 * 1000
       });
       
+      console.log('[Auth] Cookie set with options:', { 
+        httpOnly: true, 
+        secure: secureValue, 
+        sameSite: sameSiteValue,
+        path: '/' 
+      });
       return res.json({ 
         success: true,
         user: { 
@@ -171,10 +195,16 @@ router.get('/auth/oauth/callback',
       console.log('[Auth] OAuth callback successful, user:', user.username || user.email);
       
       // Set OAuth token in HTTP-only cookie for browser clients
+      // Safari-compatible settings: use 'none' for sameSite in dev, explicitly set path
+      const isProduction = process.env.NODE_ENV === 'production';
+      const sameSiteValue: 'lax' | 'none' = isProduction ? 'lax' : 'none';
+      const secureValue = isProduction || sameSiteValue === 'none'; // Safari requires secure=true when sameSite=none
+      
       res.cookie('mimir_oauth_token', accessToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: secureValue,
+        sameSite: sameSiteValue,
+        path: '/',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
       
@@ -248,11 +278,16 @@ router.get('/auth/oauth/callback',
 // Logout - STATELESS: just clear cookie (no database operations)
 router.post('/auth/logout', async (req, res) => {
   try {
-    // Clear the OAuth/JWT cookie
+    // Clear the OAuth/JWT cookie with Safari-compatible settings
+    const isProduction = process.env.NODE_ENV === 'production';
+    const sameSiteValue: 'lax' | 'none' = isProduction ? 'lax' : 'none';
+    const secureValue = isProduction || sameSiteValue === 'none';
+    
     res.clearCookie('mimir_oauth_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
+      secure: secureValue,
+      sameSite: sameSiteValue,
+      path: '/'
     });
     
     res.json({ success: true, message: 'Logged out successfully' });
@@ -265,23 +300,33 @@ router.post('/auth/logout', async (req, res) => {
 // Check auth status - verify API key
 router.get('/auth/status', async (req, res) => {
   try {
+    console.log('[Auth] /auth/status endpoint hit');
+    
     // If security is disabled, always return authenticated
     if (process.env.MIMIR_ENABLE_SECURITY !== 'true') {
+      console.log('[Auth] Security disabled, returning authenticated=true');
       return res.json({ 
         authenticated: true,
         securityEnabled: false
       });
     }
 
+    console.log('[Auth] Security enabled, checking token...');
+    
     // Extract OAuth/JWT token from cookie (STATELESS)
     const token = req.cookies?.mimir_oauth_token;
     if (!token) {
+      console.log('[Auth] No mimir_oauth_token cookie found');
+      console.log('[Auth] Available cookies:', Object.keys(req.cookies || {}));
       return res.json({ authenticated: false });
     }
+
+    console.log('[Auth] Token found in cookie, attempting JWT validation...');
 
     // Try JWT validation first (for dev login)
     try {
       const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as any;
+      console.log(`[Auth] JWT valid for user: ${decoded.email}`);
       return res.json({ 
         authenticated: true,
         user: {
@@ -291,21 +336,27 @@ router.get('/auth/status', async (req, res) => {
           roles: decoded.roles || ['viewer']
         }
       });
-    } catch (jwtError) {
+    } catch (jwtError: any) {
+      console.log('[Auth] JWT validation failed:', jwtError.message);
+      
       // Not a JWT, try OAuth token validation
       const OAUTH_USERINFO_URL = process.env.MIMIR_OAUTH_USERINFO_URL || 
         (process.env.MIMIR_OAUTH_ISSUER ? `${process.env.MIMIR_OAUTH_ISSUER}/oauth2/v1/userinfo` : null);
       
       if (!OAUTH_USERINFO_URL) {
+        console.log('[Auth] No OAuth userinfo URL configured, returning unauthenticated');
         return res.json({ authenticated: false, error: 'Invalid token' });
       }
 
+      console.log('[Auth] Attempting OAuth token validation...');
+      
       try {
         const response = await fetch(OAUTH_USERINFO_URL, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (!response.ok) {
+          console.log(`[Auth] OAuth token validation failed: ${response.status}`);
           return res.json({ authenticated: false, error: 'Invalid OAuth token' });
         }
         

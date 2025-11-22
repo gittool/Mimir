@@ -183,8 +183,8 @@ PCTX/Tools → API Key → Mimir validates → Access granted
 |----------|-------|----------|
 | **Feature Flags** | 2 | `MIMIR_ENABLE_SECURITY`, `MIMIR_DEFAULT_AUTH_METHOD` |
 | **OAuth Provider** | 8 | `MIMIR_AUTH_PROVIDER`, `MIMIR_OAUTH_ISSUER`, `MIMIR_OAUTH_CLIENT_ID` |
-| **Token Management** | 10 | `MIMIR_JWT_SECRET`, `MIMIR_ACCESS_TOKEN_LIFETIME`, `MIMIR_TOKEN_STORAGE` |
-| **Session Management** | 7 | `MIMIR_SESSION_SECRET`, `MIMIR_SESSION_TIMEOUT`, `MIMIR_SESSION_COOKIE_SECURE` |
+| **Token Management** | 5 | `MIMIR_JWT_SECRET`, `MIMIR_ACCESS_TOKEN_LIFETIME`, `MIMIR_TOKEN_STORAGE` |
+| **Stateless Auth** | 2 | `MIMIR_JWT_SECRET`, `MIMIR_OAUTH_ISSUER` |
 | **Service Accounts** | 5 | `MIMIR_ENABLE_SERVICE_ACCOUNTS`, `MIMIR_SERVICE_ACCOUNT_TOKEN_LIFETIME` |
 | **Security Features** | 3 | `MIMIR_OAUTH_ENABLE_PKCE`, `MIMIR_OAUTH_ENABLE_STATE` |
 
