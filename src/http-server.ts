@@ -214,6 +214,10 @@ async function startHttpServer() {
   // Mount API keys management routes
   app.use('/api/keys', apiKeysRouter);
 
+  // Mount RBAC config management routes (admin only)
+  const rbacConfigRouter = (await import('./api/rbac-config-api.js')).default;
+  app.use('/api/rbac', rbacConfigRouter);
+
   // Debug middleware - log ALL requests
   app.use((req, res, next) => {
     console.log(`[REQUEST] ${req.method} ${req.path}`);

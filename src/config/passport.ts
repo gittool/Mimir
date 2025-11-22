@@ -5,6 +5,7 @@ dotenv.config();
 import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as OAuth2Strategy } from 'passport-oauth2';
+import { createSecureFetchOptions } from '../utils/fetch-helper.js';
 
 // Development: Local username/password (configurable via env vars)
 // Supports multiple dev users with different roles for RBAC testing
@@ -74,11 +75,13 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true' &&
       // Fetch user profile from userinfo endpoint
       const userinfoURL = process.env.MIMIR_OAUTH_USERINFO_URL || `${process.env.MIMIR_OAUTH_ISSUER}/oauth2/v1/userinfo`;
       
-      const response = await fetch(userinfoURL, {
+      const fetchOptions = createSecureFetchOptions(userinfoURL, {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
       });
+      
+      const response = await fetch(userinfoURL, fetchOptions);
       
       if (!response.ok) {
         return done(new Error(`Failed to fetch user profile: ${response.statusText}`));

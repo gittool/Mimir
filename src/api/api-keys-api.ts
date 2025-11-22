@@ -48,6 +48,7 @@ router.post('/generate', requirePermission('keys:write'), async (req: Request, r
       createdAt: new Date().toISOString(),
       expiresAt: expiresAt ? expiresAt.toISOString() : null,
       lastUsedAt: null,
+      lastValidated: new Date().toISOString(), // Initialize validation timestamp for periodic re-validation
       usageCount: 0,
       status: 'active'
     });

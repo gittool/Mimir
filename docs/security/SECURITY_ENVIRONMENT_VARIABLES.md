@@ -189,8 +189,10 @@ MIMIR_ENABLE_TOKEN_REVOCATION=true
 MIMIR_SESSION_SECRET=your-session-secret-generate-with-openssl
 
 # Session max age in hours (default: 24, set to 0 for never expire)
-# 0 = session never expires (useful for development/testing)
-# 24 = 24 hours (default)
+# Also controls API key re-validation interval for security
+# 0 = session never expires, API keys never re-validated (development)
+# 1 = 1 hour (high security, frequent re-validation)
+# 24 = 24 hours (default, daily re-validation)
 # 168 = 1 week
 # 720 = 30 days
 MIMIR_SESSION_MAX_AGE_HOURS=24
@@ -432,6 +434,27 @@ MIMIR_RBAC_READONLY_ROLE=readonly
 
 # Role permissions (JSON format)
 # MIMIR_RBAC_PERMISSIONS='{"admin":["*"],"user":["read","write"],"readonly":["read"]}'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# API Key Management
+# ─────────────────────────────────────────────────────────────────────────────
+
+# API keys are managed via the API (no environment variables needed)
+# Key features:
+# - Generate keys via POST /api/keys/generate (requires keys:write permission)
+# - List keys via GET /api/keys (requires keys:read permission)
+# - Revoke keys via DELETE /api/keys/:keyId (requires keys:delete permission)
+# - Keys inherit user's roles by default (can specify custom permissions)
+# - Configurable expiration (default: 90 days)
+# - Periodic re-validation based on MIMIR_SESSION_MAX_AGE_HOURS
+#
+# Re-validation behavior:
+# - MIMIR_SESSION_MAX_AGE_HOURS=24 → API keys re-validated every 24 hours
+# - MIMIR_SESSION_MAX_AGE_HOURS=1  → API keys re-validated every hour (high security)
+# - MIMIR_SESSION_MAX_AGE_HOURS=0  → API keys never re-validated (development only)
+#
+# Re-validation ensures API keys can't have more permissions than user currently has.
+# Example: User demoted from admin → developer, API key automatically downgraded.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Audit Logging

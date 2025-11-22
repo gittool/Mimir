@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
+import { createSecureFetchOptions } from '../utils/fetch-helper.js';
 
 /**
  * Audit Event Structure (Generic, Not Domain-Specific)
@@ -82,11 +83,13 @@ async function flushWebhookBatch(config: AuditLoggerConfig) {
       headers['Authorization'] = config.webhookAuthHeader;
     }
 
-    const response = await fetch(config.webhookUrl, {
+    const fetchOptions = createSecureFetchOptions(config.webhookUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify({ events }),
     });
+
+    const response = await fetch(config.webhookUrl, fetchOptions);
 
     if (!response.ok) {
       console.error(`[Audit] Webhook failed: ${response.status} ${response.statusText}`);

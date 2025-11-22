@@ -501,9 +501,34 @@ A: Yes! Add `mcp:*` permissions and check in MCP server tool handlers.
 **Q: Does this work with API keys?**  
 A: Yes! API keys can have associated roles stored in database, checked same way.
 
+**Q: How does periodic re-validation work for API keys?**  
+A: API keys are re-validated against the user's current roles based on `MIMIR_SESSION_MAX_AGE_HOURS`:
+- **Default (24 hours)**: API key permissions are re-validated every 24 hours
+- **Never expire (0)**: API keys are never re-validated (use cached permissions)
+- **Custom (e.g., 1 hour)**: API keys are re-validated every hour
+
+When re-validation occurs:
+1. Mimir queries the user's current roles from their active session or stored profile
+2. The API key's permissions are updated to the intersection of:
+   - Original key permissions (what the key was granted)
+   - User's current roles (what the user currently has)
+3. This ensures API keys can't have more permissions than the user currently has
+
+**Example:**
+- User creates API key with `["admin", "developer"]` permissions
+- User is later demoted to `["developer"]` in IdP
+- After re-validation interval, API key permissions are reduced to `["developer"]`
+- This prevents privilege escalation via stale API keys
+
+**Security Benefits:**
+- ✅ API keys automatically downgrade when user permissions are reduced
+- ✅ No manual key revocation needed when user roles change
+- ✅ Balances security (periodic checks) with performance (cached permissions)
+- ✅ Works offline (uses cached permissions if user data unavailable)
+
 ---
 
 **Last Updated**: 2025-11-21  
-**Version**: 1.0.0
+**Version**: 1.1.0
 
 

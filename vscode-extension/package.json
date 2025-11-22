@@ -39,6 +39,16 @@
     ],
     "commands": [
       {
+        "command": "mimir.login",
+        "title": "Mimir: Login",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "mimir.logout",
+        "title": "Mimir: Logout",
+        "icon": "$(sign-out)"
+      },
+      {
         "command": "mimir.askQuestion",
         "title": "Mimir: Ask a Question",
         "icon": "$(comment-discussion)"
@@ -151,6 +161,21 @@
           "minimum": 500,
           "maximum": 10000,
           "description": "Auto-save delay in milliseconds"
+        },
+        "mimir.auth.devUsername": {
+          "type": "string",
+          "default": "",
+          "description": "Development mode username (auto-login when security enabled)"
+        },
+        "mimir.auth.devPassword": {
+          "type": "string",
+          "default": "",
+          "description": "Development mode password (auto-login when security enabled)"
+        },
+        "mimir.auth.devApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Development mode API key (bypasses login if provided)"
         }
       }
     },

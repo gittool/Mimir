@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { createSecureFetchOptions } from '../utils/fetch-helper.js';
 
 export interface RBACConfig {
   version: string;
@@ -31,7 +32,8 @@ async function fetchRemoteConfig(uri: string): Promise<RBACConfig> {
   
   console.log(`📡 Fetching RBAC config from: ${uri}`);
   
-  const response = await fetch(uri, { headers });
+  const fetchOptions = createSecureFetchOptions(uri, { headers });
+  const response = await fetch(uri, fetchOptions);
   
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);

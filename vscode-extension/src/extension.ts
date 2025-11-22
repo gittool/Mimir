@@ -4,9 +4,12 @@ import { StudioPanel } from './studioPanel';
 import { PortalPanel } from './portalPanel';
 import { IntelligencePanel } from './intelligencePanel';
 import { NodeManagerPanel } from './nodeManagerPanel';
+import { AuthManager } from './authManager';
+import { AdminPanel } from './adminPanel';
 import type { ChatMessage, MimirConfig, ToolParameters } from './types';
 
 let preambleManager: PreambleManager;
+let authManager: AuthManager;
 
 /**
  * Parses command-line style arguments from the prompt
@@ -61,6 +64,20 @@ export async function activate(context: vscode.ExtensionContext) {
   // Get initial configuration
   const config = getConfig();
   preambleManager = new PreambleManager(config.apiUrl);
+  authManager = new AuthManager(context, config.apiUrl);
+
+  // Check authentication status and authenticate if needed
+  try {
+    const authConfig = await authManager.checkAuthStatus();
+    if (authConfig.enabled) {
+      const authenticated = await authManager.authenticate();
+      if (!authenticated) {
+        vscode.window.showWarningMessage('Mimir: Authentication failed. Some features may not work.');
+      }
+    }
+  } catch (error) {
+    console.error('Auth check failed:', error);
+  }
 
   // Load available preambles
   try {
@@ -90,6 +107,25 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   // ========================================
+  // AUTHENTICATION: Register login/logout commands
+  // ========================================
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mimir.login', async () => {
+      const authenticated = await authManager.authenticate();
+      if (authenticated) {
+        const state = await authManager.getAuthState();
+        vscode.window.showInformationMessage(`Mimir: Logged in as ${state?.username || 'user'}`);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mimir.logout', async () => {
+      await authManager.logout();
+    })
+  );
+
+  // ========================================
   // CHAT UI: Register chat commands (Cursor/Windsurf compatible)
   // ========================================
   context.subscriptions.push(
@@ -109,9 +145,15 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine('🤔 Thinking...\n');
         
         try {
+          // Get authentication headers
+          const authHeaders = await authManager.getAuthHeaders();
+          
           const response = await fetch(`${config.apiUrl}/v1/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              ...authHeaders
+            },
             body: JSON.stringify({
               messages: [{ role: 'user', content: prompt }],
               model: config.model,
@@ -214,6 +256,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (e.affectsConfiguration('mimir')) {
         const newConfig = getConfig();
         preambleManager.updateBaseUrl(newConfig.apiUrl);
+        authManager.updateBaseUrl(newConfig.apiUrl);
         preambleManager.loadAvailablePreambles().then(preambles => {
           console.log(`🔄 Configuration updated, reloaded ${preambles.length} preambles`);
         });
@@ -391,9 +434,15 @@ async function handleChatRequest(
     const abortController = new AbortController();
     token.onCancellationRequested(() => abortController.abort());
 
+    // Get authentication headers
+    const authHeaders = await authManager.getAuthHeaders();
+
     const fetchResponse = await fetch(`${config.apiUrl}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...authHeaders
+      },
       body: JSON.stringify(requestBody),
       signal: abortController.signal
     });

@@ -15,6 +15,7 @@ Mimir has successfully completed **Phase 1 & 2 Security Implementation**, achiev
 - ✅ **Zero breaking changes** - backward compatible (security disabled by default)
 - ✅ **Enterprise SSO ready** - supports Okta, Auth0, Azure AD, Google, Keycloak
 - ✅ **Flexible RBAC** - configurable via local file, remote URI, or inline JSON
+- ✅ **API key management** - with periodic re-validation against user roles
 - ✅ **Structured audit logging** - JSON output for SIEM integration
 - ✅ **Data retention policies** - configurable TTL (default: forever)
 - ✅ **Comprehensive testing** - automated test suites for RBAC and audit logging
@@ -105,7 +106,51 @@ Mimir has successfully completed **Phase 1 & 2 Security Implementation**, achiev
 - `src/http-server.ts` - Route protection middleware
 - `src/api/nodes-api.ts` - RBAC middleware on API routes
 
-### 5. Development & Testing
+### 5. API Key Management
+
+**Features**
+- ✅ Generate API keys for service-to-service authentication
+- ✅ Keys inherit user's roles/permissions by default
+- ✅ Optional custom permissions (subset of user's roles)
+- ✅ Configurable expiration (default: 90 days)
+- ✅ Revocation support
+- ✅ Usage tracking (last used, usage count)
+- ✅ **Periodic re-validation** against user's current roles
+
+**Periodic Re-validation (Security Enhancement)**
+- API keys are re-validated based on `MIMIR_SESSION_MAX_AGE_HOURS`
+- Ensures keys can't have more permissions than user currently has
+- Example: User demoted from `admin` → `developer`, API key automatically downgraded
+- Balances security (periodic checks) with performance (cached permissions)
+- Works offline (uses cached permissions if user data unavailable)
+
+**Implementation:**
+- `src/api/api-keys-api.ts` - Key generation, listing, revocation
+- `src/middleware/api-key-auth.ts` - Key validation + re-validation logic
+- `config/rbac.json` - `keys:read`, `keys:write`, `keys:delete` permissions
+
+**Usage:**
+```bash
+# Generate API key (requires keys:write permission)
+curl -X POST http://localhost:3000/api/keys/generate \
+  -H "Cookie: connect.sid=..." \
+  -H "Content-Type: application/json" \
+  -d '{"name": "VSCode Extension", "expiresInDays": 90}'
+
+# Use API key for authentication
+curl http://localhost:3000/api/nodes \
+  -H "X-API-Key: mimir_abc123..."
+
+# List API keys (requires keys:read permission)
+curl http://localhost:3000/api/keys \
+  -H "Cookie: connect.sid=..."
+
+# Revoke API key (requires keys:delete permission)
+curl -X DELETE http://localhost:3000/api/keys/:keyId \
+  -H "Cookie: connect.sid=..."
+```
+
+### 6. Development & Testing
 
 **Pre-Configured Dev Users**
 ```bash
