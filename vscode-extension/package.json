@@ -101,6 +101,34 @@
           "scope": "window",
           "order": 0
         },
+        "mimir.auth.username": {
+          "type": "string",
+          "default": "",
+          "description": "Username for authentication (if security is enabled)",
+          "scope": "window",
+          "order": 1
+        },
+        "mimir.auth.password": {
+          "type": "password",
+          "default": "",
+          "description": "Password for authentication (if security is enabled). Stored in VSCode settings.",
+          "scope": "window",
+          "order": 2
+        },
+        "mimir.auth.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Cached API key (automatically managed, expires after 90 days)",
+          "scope": "application",
+          "order": 3
+        },
+        "mimir.auth.expiresAt": {
+          "type": "string",
+          "default": "",
+          "description": "API key expiration timestamp (automatically managed)",
+          "scope": "application",
+          "order": 4
+        },
         "mimir.defaultPreamble": {
           "type": "string",
           "default": "mimir-v2",
@@ -161,21 +189,6 @@
           "minimum": 500,
           "maximum": 10000,
           "description": "Auto-save delay in milliseconds"
-        },
-        "mimir.auth.devUsername": {
-          "type": "string",
-          "default": "",
-          "description": "Development mode username (auto-login when security enabled)"
-        },
-        "mimir.auth.devPassword": {
-          "type": "string",
-          "default": "",
-          "description": "Development mode password (auto-login when security enabled)"
-        },
-        "mimir.auth.devApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Development mode API key (bypasses login if provided)"
         }
       }
     },

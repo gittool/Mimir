@@ -5,7 +5,6 @@ import { PortalPanel } from './portalPanel';
 import { IntelligencePanel } from './intelligencePanel';
 import { NodeManagerPanel } from './nodeManagerPanel';
 import { AuthManager } from './authManager';
-import { AdminPanel } from './adminPanel';
 import type { ChatMessage, MimirConfig, ToolParameters } from './types';
 
 let preambleManager: PreambleManager;
@@ -61,23 +60,16 @@ function parseArguments(prompt: string): {
 export async function activate(context: vscode.ExtensionContext) {
   console.log('🚀 Mimir Chat Assistant activating...');
 
+  // Store context globally so panels can access it
+  (global as any).mimirExtensionContext = context;
+
   // Get initial configuration
   const config = getConfig();
-  preambleManager = new PreambleManager(config.apiUrl);
   authManager = new AuthManager(context, config.apiUrl);
+  preambleManager = new PreambleManager(config.apiUrl, () => authManager.getAuthHeaders());
 
-  // Check authentication status and authenticate if needed
-  try {
-    const authConfig = await authManager.checkAuthStatus();
-    if (authConfig.enabled) {
-      const authenticated = await authManager.authenticate();
-      if (!authenticated) {
-        vscode.window.showWarningMessage('Mimir: Authentication failed. Some features may not work.');
-      }
-    }
-  } catch (error) {
-    console.error('Auth check failed:', error);
-  }
+  // Authentication is handled via explicit login command only
+  // No auto-login on extension activation
 
   // Load available preambles
   try {
@@ -111,17 +103,56 @@ export async function activate(context: vscode.ExtensionContext) {
   // ========================================
   context.subscriptions.push(
     vscode.commands.registerCommand('mimir.login', async () => {
+      // Prompt for username and password, then save to configuration
+      const username = await vscode.window.showInputBox({
+        prompt: 'Mimir Username',
+        placeHolder: 'Enter your username',
+        ignoreFocusOut: true
+      });
+
+      if (!username) {
+        return;
+      }
+
+      const password = await vscode.window.showInputBox({
+        prompt: 'Mimir Password',
+        placeHolder: 'Enter your password',
+        password: true,
+        ignoreFocusOut: true
+      });
+
+      if (!password) {
+        return;
+      }
+
+      // Save to global user settings
+      const config = vscode.workspace.getConfiguration('mimir');
+      await config.update('auth.username', username, vscode.ConfigurationTarget.Global);
+      await config.update('auth.password', password, vscode.ConfigurationTarget.Global);
+      
+      console.log('[Mimir] Saved credentials to global user settings');
+
+      // Clear any cached auth state and re-authenticate
+      await authManager.logout();
       const authenticated = await authManager.authenticate();
+      
       if (authenticated) {
-        const state = await authManager.getAuthState();
-        vscode.window.showInformationMessage(`Mimir: Logged in as ${state?.username || 'user'}`);
+        vscode.window.showInformationMessage(`Mimir: Configured credentials for ${username}`);
       }
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('mimir.logout', async () => {
+      // Clear global user settings
+      const config = vscode.workspace.getConfiguration('mimir');
+      await config.update('auth.username', undefined, vscode.ConfigurationTarget.Global);
+      await config.update('auth.password', undefined, vscode.ConfigurationTarget.Global);
+      
+      // Clear cached auth state
       await authManager.logout();
+      
+      vscode.window.showInformationMessage('Mimir: Logged out and cleared credentials');
     })
   );
 
@@ -216,14 +247,14 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('mimir.openStudio', () => {
       console.log('🎨 Opening Mimir Studio...');
-      StudioPanel.createOrShow(context.extensionUri, config.apiUrl);
+      StudioPanel.createOrShow(context.extensionUri, config.apiUrl, () => authManager.getAuthHeaders());
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('mimir.createWorkflow', async () => {
       // Open Studio and prompt for new workflow
-      StudioPanel.createOrShow(context.extensionUri, config.apiUrl);
+      StudioPanel.createOrShow(context.extensionUri, config.apiUrl, () => authManager.getAuthHeaders());
       vscode.window.showInformationMessage('Drag agents to the canvas to create your workflow');
     })
   );
@@ -246,7 +277,7 @@ export async function activate(context: vscode.ExtensionContext) {
   vscode.window.registerWebviewPanelSerializer('mimirStudio', {
     async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel, state: any) {
       console.log('🔄 Restoring Studio panel from state');
-      StudioPanel.revive(webviewPanel, context.extensionUri, state, config.apiUrl);
+      StudioPanel.revive(webviewPanel, context.extensionUri, state, config.apiUrl, () => authManager.getAuthHeaders());
     }
   });
 

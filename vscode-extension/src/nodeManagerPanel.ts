@@ -47,15 +47,44 @@ export class NodeManagerPanel {
     this._panel.webview.onDidReceiveMessage(
       async (message) => {
         switch (message.command) {
-          case 'ready':
+          case 'ready': {
+            // Webview is loaded and ready - send config with auth headers
+            let authHeaders = {};
+            
+            try {
+              // Dynamic import to avoid circular dependencies
+              const { AuthManager } = require('./authManager');
+              const context = (global as any).mimirExtensionContext;
+              
+              if (context) {
+                const apiUrl = vscode.workspace.getConfiguration('mimir').get('apiUrl', 'http://localhost:9042');
+                const authManager = new AuthManager(context, apiUrl);
+                
+                // First authenticate (will use cached credentials if available)
+                console.log('[NodeManagerPanel] Authenticating...');
+                const authenticated = await authManager.authenticate();
+                console.log('[NodeManagerPanel] Authentication result:', authenticated);
+                
+                // Then get auth headers
+                authHeaders = await authManager.getAuthHeaders();
+                console.log('[NodeManagerPanel] Auth headers:', Object.keys(authHeaders).length > 0 ? 'Present' : 'Empty');
+              } else {
+                console.error('[NodeManagerPanel] No extension context available');
+              }
+            } catch (error) {
+              console.error('[NodeManagerPanel] Failed to get auth headers:', error);
+            }
+            
             // Send configuration when webview is ready
             this._panel.webview.postMessage({
               command: 'config',
               config: {
                 apiUrl: vscode.workspace.getConfiguration('mimir').get('apiUrl', 'http://localhost:9042')
-              }
+              },
+              authHeaders: authHeaders
             });
             break;
+          }
 
           case 'confirmDelete': {
             // Show native confirmation dialog

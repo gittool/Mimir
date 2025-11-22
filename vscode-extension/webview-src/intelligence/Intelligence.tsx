@@ -4,15 +4,17 @@ import './styles.css';
 declare const vscode: any;
 
 interface FolderInfo {
+  id: string;
   path: string;
   hostPath?: string;
   fileCount: number;
   chunkCount: number;
   embeddingCount: number;
-  status: 'active' | 'stopped' | 'error';
+  status: 'active' | 'inactive' | 'stopped' | 'error';
   lastSync: string;
   patterns?: string[];
   isIndexing?: boolean;
+  error?: string | null;
 }
 
 interface IndexingProgress {
@@ -56,9 +58,16 @@ export function Intelligence() {
   const [stats, setStats] = useState<IndexStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [apiUrl, setApiUrl] = useState('http://localhost:9042');
+  const [authHeaders, setAuthHeaders] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [progressMap, setProgressMap] = useState<Map<string, IndexingProgress>>(new Map());
   const [configReceived, setConfigReceived] = useState(false);
+  
+  // Memoize auth headers to prevent infinite loops
+  const authHeadersRef = React.useRef<Record<string, string>>({});
+  React.useEffect(() => {
+    authHeadersRef.current = authHeaders;
+  }, [authHeaders]);
   
   // Vector search state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -74,8 +83,12 @@ export function Intelligence() {
   const loadFolders = useCallback(async () => {
     try {
       const [foldersResponse, statusResponse] = await Promise.all([
-        fetch(`${apiUrl}/api/indexed-folders`),
-        fetch(`${apiUrl}/api/indexing-status`).catch(() => null)
+        fetch(`${apiUrl}/api/indexed-folders`, { 
+          headers: authHeadersRef.current
+        }),
+        fetch(`${apiUrl}/api/indexing-status`, { 
+          headers: authHeadersRef.current
+        }).catch(() => null)
       ]);
       
       if (!foldersResponse.ok) throw new Error(`HTTP ${foldersResponse.status}`);
@@ -99,19 +112,23 @@ export function Intelligence() {
       setFolders(folders);
     } catch (err: any) {
       console.error('Failed to load folders:', err);
-      setFolders([]);
+      // Don't clear folders on error - keep existing data
+      // setFolders([]);
     }
   }, [apiUrl]);
 
   const loadStats = useCallback(async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/index-stats`);
+      const response = await fetch(`${apiUrl}/api/index-stats`, { 
+        headers: authHeadersRef.current
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json() as any;
       setStats(data);
     } catch (err: any) {
       console.error('Failed to load stats:', err);
-      setStats(null);
+      // Don't clear stats on error - keep existing data
+      // setStats(null);
     }
   }, [apiUrl]);
 
@@ -121,21 +138,23 @@ export function Intelligence() {
     try {
       await Promise.all([loadFolders(), loadStats()]);
     } catch (err: any) {
-      setError(`Failed to load data: ${err.message}`);
+      console.error('[Intelligence] Failed to load data:', err);
+      setError(`Network error: Unable to connect to server. Please check if the server is running.`);
+      // Don't clear existing data on network errors
     } finally {
       setLoading(false);
     }
   }, [loadFolders, loadStats]);
 
-  const performRemoveFolder = useCallback(async (path: string) => {
-    console.log('[Intelligence] Performing deletion for path:', path);
+  const performRemoveFolder = useCallback(async (id: string, path: string) => {
+    console.log('[Intelligence] Performing deletion for ID:', id, 'path:', path);
     
     try {
       console.log('[Intelligence] Sending DELETE request to:', `${apiUrl}/api/indexed-folders`);
       const response = await fetch(`${apiUrl}/api/indexed-folders`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path })
+        headers: { 'Content-Type': 'application/json', ...authHeadersRef.current },
+        body: JSON.stringify({ id })
       });
 
       console.log('[Intelligence] DELETE response status:', response.status);
@@ -175,7 +194,12 @@ export function Intelligence() {
       const message = event.data;
       switch (message.command) {
         case 'config':
+          console.log('[Intelligence] Received config:', message.apiUrl, 'Auth headers:', Object.keys(message.authHeaders || {}).length > 0 ? 'Present' : 'Empty');
+          if (message.authHeaders && Object.keys(message.authHeaders).length > 0) {
+            console.log('[Intelligence] Auth header keys:', Object.keys(message.authHeaders));
+          }
           setApiUrl(message.apiUrl || 'http://localhost:9042');
+          setAuthHeaders(message.authHeaders || {});
           setConfigReceived(true);
           break;
         case 'refresh':
@@ -183,7 +207,7 @@ export function Intelligence() {
           break;
         case 'removeFolderConfirmed':
           // Extension confirmed deletion, proceed with API call
-          performRemoveFolder(message.path);
+          performRemoveFolder(message.id, message.path);
           break;
       }
     };
@@ -192,12 +216,13 @@ export function Intelligence() {
     return () => window.removeEventListener('message', handleMessage);
   }, [loadData, performRemoveFolder]);
 
-  // Load data once config is received
+  // Load data once config is received AND auth headers are set
   useEffect(() => {
-    if (configReceived) {
+    if (configReceived && Object.keys(authHeaders).length > 0) {
+      console.log('[Intelligence] Config and auth headers received, loading data');
       loadData();
     }
-  }, [configReceived, loadData]);
+  }, [configReceived, authHeaders, loadData]);
 
   // SSE connection for real-time indexing progress
   useEffect(() => {
@@ -206,7 +231,21 @@ export function Intelligence() {
       return;
     }
 
-    const eventSource = new EventSource(`${apiUrl}/api/indexing-progress`);
+    // EventSource doesn't support custom headers, so pass API key as query param
+    // Extract token from Authorization: Bearer header (OAuth 2.0 RFC 6750)
+    const authHeader = authHeadersRef.current['Authorization'];
+    let apiKey: string | undefined;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      apiKey = authHeader.substring(7); // Remove 'Bearer ' prefix
+    }
+    
+    // Using 'access_token' query param follows OAuth 2.0 RFC 6750
+    const sseUrl = apiKey 
+      ? `${apiUrl}/api/indexing-progress?access_token=${encodeURIComponent(apiKey)}`
+      : `${apiUrl}/api/indexing-progress`;
+    
+    const eventSource = new EventSource(sseUrl);
 
     eventSource.onmessage = (event) => {
       if (event.data && event.data !== ': heartbeat') {
@@ -246,14 +285,59 @@ export function Intelligence() {
     vscode.postMessage({ command: 'selectFolder' });
   };
 
-  const handleRemoveFolder = (path: string) => {
-    console.log('[Intelligence] Delete button clicked for path:', path);
+  const handleRemoveFolder = (id: string, path: string) => {
+    console.log('[Intelligence] Delete button clicked for ID:', id, 'path:', path);
     
     // Request confirmation from extension host (webviews can't use confirm())
     vscode.postMessage({ 
       command: 'confirmRemoveFolder',
+      id: id,
       path: path
     });
+  };
+
+  const handleReactivateFolder = async (id: string, path: string) => {
+    console.log('[Intelligence] Reactivate button clicked for ID:', id, 'path:', path);
+    console.log('[Intelligence] ID type:', typeof id, 'ID value:', id);
+    
+    if (!id) {
+      console.error('[Intelligence] ERROR: id is undefined or empty!');
+      vscode.postMessage({ 
+        command: 'showMessage', 
+        type: 'error',
+        message: `❌ Cannot reactivate: folder ID is missing` 
+      });
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${apiUrl}/api/indexed-folders/reactivate`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeadersRef.current },
+        body: JSON.stringify({ id })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error);
+      }
+
+      vscode.postMessage({ 
+        command: 'showMessage', 
+        type: 'info',
+        message: `✅ Reactivated watch: ${path}` 
+      });
+
+      loadData();
+    } catch (err: any) {
+      console.error('[Intelligence] Error reactivating watch:', err);
+      
+      vscode.postMessage({ 
+        command: 'showMessage', 
+        type: 'error',
+        message: `❌ Failed to reactivate watch: ${err.message}` 
+      });
+    }
   };
 
   const handleRefresh = () => {
@@ -277,7 +361,9 @@ export function Intelligence() {
         types: 'file' // Will be expanded to file,file_chunk by the server
       });
 
-      const response = await fetch(`${apiUrl}/api/nodes/vector-search?${params}`);
+      const response = await fetch(`${apiUrl}/api/nodes/vector-search?${params}`, { 
+        headers: authHeadersRef.current
+      });
       const data = await response.json();
 
       if (response.ok) {
@@ -328,9 +414,20 @@ export function Intelligence() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'active': return '✅';
-      case 'stopped': return '⏸️';
+      case 'inactive': return '⏸️';
+      case 'stopped': return '🛑';
       case 'error': return '❌';
       default: return '❓';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'active': return 'Active';
+      case 'inactive': return 'Inactive';
+      case 'stopped': return 'Stopped';
+      case 'error': return 'Error';
+      default: return 'Unknown';
     }
   };
 
@@ -409,7 +506,7 @@ export function Intelligence() {
             <div className="setting-item">
               <label htmlFor="min-similarity">Min Similarity:</label>
               <input
-                id="min-similarity"
+                id={`min-similarity-${Math.random()}`}
                 type="range"
                 min="0.5"
                 max="1.0"
@@ -425,7 +522,7 @@ export function Intelligence() {
             <div className="setting-item">
               <label htmlFor="search-limit">Max Results:</label>
               <input
-                id="search-limit"
+                id={`search-limit-${Math.random()}`}
                 type="number"
                 min="5"
                 max="100"
@@ -455,8 +552,8 @@ export function Intelligence() {
         {searchResults.length > 0 && (
           <div className="search-results">
             <h3>Search Results</h3>
-            {searchResults.map((result, idx) => (
-              <div key={idx} className="search-result-item">
+            {searchResults.map((result) => (
+              <div key={result.id} className="search-result-item">
                 <div className="result-header">
                   <span className="result-icon">📄</span>
                   <span className="result-title">{result.title || result.path}</span>
@@ -559,6 +656,14 @@ export function Intelligence() {
                     <div className="folder-details">
                       <div className="folder-path">
                         {folder.hostPath || folder.path}
+                        <span style={{ 
+                          marginLeft: '8px', 
+                          fontSize: '11px', 
+                          color: folder.status === 'inactive' ? 'var(--vscode-descriptionForeground)' : 'var(--vscode-foreground)',
+                          opacity: folder.status === 'inactive' ? 0.7 : 1
+                        }}>
+                          ({getStatusLabel(folder.status)})
+                        </span>
                         {isIndexing && progress && (
                           <span style={{ 
                             marginLeft: '8px', 
@@ -589,6 +694,16 @@ export function Intelligence() {
                             ✅ Complete ({progress.indexed} indexed, {progress.skipped} skipped, {progress.errored} errors)
                           </span>
                         )}
+                        {folder.status === 'inactive' && folder.error && (
+                          <span style={{ 
+                            marginLeft: '8px', 
+                            fontSize: '11px', 
+                            color: 'var(--vscode-errorForeground)',
+                            fontStyle: 'italic'
+                          }}>
+                            ({folder.error})
+                          </span>
+                        )}
                       </div>
                     <div className="folder-stats">
                       <span title="Files">📄 {formatNumber(folder.fileCount)}</span>
@@ -603,14 +718,36 @@ export function Intelligence() {
                   </div>
                 </div>
                 <div className="folder-actions">
-                  <button
-                    type="button"
-                    className="button-danger"
-                    onClick={() => handleRemoveFolder(folder.path)}
-                    title={folder.isIndexing ? 'Cancel indexing and remove folder' : 'Remove from indexing'}
-                  >
-                    {folder.isIndexing ? '🛑 Cancel & Remove' : '🗑️ Remove'}
-                  </button>
+                  {folder.status === 'inactive' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="button-primary"
+                        onClick={() => handleReactivateFolder(folder.id, folder.path)}
+                        title="Reactivate this watch"
+                        style={{ marginRight: '8px' }}
+                      >
+                        ▶️ Reactivate
+                      </button>
+                      <button
+                        type="button"
+                        className="button-danger"
+                        onClick={() => handleRemoveFolder(folder.id, folder.path)}
+                        title="Permanently remove from indexing"
+                      >
+                        🗑️ Delete
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="button-danger"
+                      onClick={() => handleRemoveFolder(folder.id, folder.path)}
+                      title={folder.isIndexing ? 'Cancel indexing and remove folder' : 'Remove from indexing'}
+                    >
+                      {folder.isIndexing ? '🛑 Cancel & Remove' : '🗑️ Remove'}
+                    </button>
+                  )}
                 </div>
               </div>
             );

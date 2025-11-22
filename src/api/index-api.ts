@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { FileWatchManager } from '../indexing/FileWatchManager.js';
 import { WatchConfigManager } from '../indexing/WatchConfigManager.js';
 import neo4j from 'neo4j-driver';
+import { validateAndSanitizePath, translateHostToContainer, getHostWorkspaceRoot } from '../utils/path-utils.js';
+import { promises as fs } from 'fs';
 
 const router = Router();
 
@@ -31,7 +33,7 @@ router.get('/indexed-folders', async (req: Request, res: Response) => {
     );
 
     const configManager = new WatchConfigManager(driver);
-    const watchConfigs = await configManager.listActive();
+    const watchConfigs = await configManager.listAll();
     
     // Use separate session for each query to avoid transaction conflicts
     const folders = await Promise.all(
@@ -73,6 +75,7 @@ router.get('/indexed-folders', async (req: Request, res: Response) => {
             : new Date().toISOString();
 
           return {
+            id: config.id,
             path: config.path,
             hostPath: config.host_path,
             fileCount,
@@ -109,14 +112,63 @@ router.get('/indexed-folders', async (req: Request, res: Response) => {
  */
 router.post('/index-folder', async (req: Request, res: Response) => {
   try {
-    const { path, hostPath, recursive, generate_embeddings, file_patterns, ignore_patterns } = req.body;
+    const { path: inputPath, recursive, generate_embeddings, file_patterns, ignore_patterns } = req.body;
 
-    if (!path) {
+    if (!inputPath) {
       return res.status(400).json({ error: 'Path is required' });
     }
 
-    console.log(`📁 Adding folder to indexing: ${path}`);
-    console.log(`   Host path: ${hostPath || 'N/A'}`);
+    // Sanitize and validate path input using path utilities (same as MCP tools)
+    let resolvedPath: string;
+    let containerPath: string;
+    
+    try {
+      resolvedPath = validateAndSanitizePath(inputPath);
+      
+      // Translate host path to container path
+      containerPath = translateHostToContainer(resolvedPath);
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Invalid path',
+        message: error instanceof Error ? error.message : 'Invalid path provided',
+        path: inputPath
+      });
+    }
+    
+    console.log(`📍 Path translation: ${resolvedPath} -> ${containerPath}`);
+
+    // Validation: Path exists (using container path)
+    try {
+      await fs.access(containerPath);
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Path does not exist',
+        message: `Path '${resolvedPath}' (container: '${containerPath}') does not exist on filesystem.`,
+        path: resolvedPath
+      });
+    }
+
+    // Check if it's a directory
+    try {
+      const stats = await fs.stat(containerPath);
+      if (!stats.isDirectory()) {
+        return res.status(400).json({
+          error: 'Path is not a directory',
+          message: `Path '${resolvedPath}' is not a directory.`,
+          path: resolvedPath
+        });
+      }
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Cannot stat path',
+        message: error instanceof Error ? error.message : 'Failed to check path',
+        path: resolvedPath
+      });
+    }
+
+    console.log(`📁 Adding folder to indexing: ${containerPath}`);
+    console.log(`   Resolved path: ${resolvedPath}`);
+    console.log(`   Container path: ${containerPath}`);
     console.log(`   Recursive: ${recursive !== false}`);
     console.log(`   Generate embeddings: ${generate_embeddings !== false}`);
 
@@ -130,21 +182,22 @@ router.post('/index-folder', async (req: Request, res: Response) => {
 
     const configManager = new WatchConfigManager(driver);
     
-    // Check if already watching
-    const existing = await configManager.getByPath(path);
+    // Check if already watching (use container path)
+    const existing = await configManager.getByPath(containerPath);
     if (existing) {
       await driver.close();
       return res.status(409).json({ 
         error: 'Folder is already being watched', 
-        path,
+        path: resolvedPath,
+        containerPath: containerPath,
         existingConfig: existing
       });
     }
 
-    // Create watch configuration
+    // Create watch configuration (use container path)
     const config = await configManager.createWatch({
-      path,
-      host_path: hostPath,
+      path: containerPath,  // Store container path
+      host_path: resolvedPath,  // Store resolved host path
       recursive: recursive !== false,
       generate_embeddings: generate_embeddings !== false,
       file_patterns,
@@ -157,22 +210,22 @@ router.post('/index-folder', async (req: Request, res: Response) => {
     // Start watching in background (don't await - let it run async)
     const watchManager = getWatchManager();
     watchManager.startWatch(config).catch((error) => {
-      console.error(`❌ Error during background indexing for ${path}:`, error);
+      console.error(`❌ Error during background indexing for ${containerPath}:`, error);
     });
 
     // Return immediately - indexing continues in background
     res.json({ 
       success: true, 
-      message: `Folder added to indexing: ${path}. Indexing will continue in the background.`,
-      path,
-      hostPath,
+      message: `Folder added to indexing: ${resolvedPath}. Indexing will continue in the background.`,
+      path: resolvedPath,  // Return sanitized path to user
+      containerPath: containerPath,  // Also include container path for transparency
       config
     });
   } catch (error: any) {
     console.error('❌ Error adding folder to indexing:', error);
     res.status(500).json({ 
       error: 'Failed to add folder to indexing', 
-      details: error.message 
+      message: error.message 
     });
   }
 });
@@ -183,13 +236,13 @@ router.post('/index-folder', async (req: Request, res: Response) => {
  */
 router.delete('/indexed-folders', async (req: Request, res: Response) => {
   try {
-    const { path } = req.body;
+    const { id } = req.body;
 
-    if (!path) {
-      return res.status(400).json({ error: 'Path is required' });
+    if (!id) {
+      return res.status(400).json({ error: 'Watch config ID is required' });
     }
 
-    console.log(`🗑️ Removing folder from indexing: ${path}`);
+    console.log(`🗑️ Removing watch config by ID: ${id}`);
 
     const driver = neo4j.driver(
       process.env.NEO4J_URI || 'bolt://localhost:7687',
@@ -201,19 +254,25 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
 
     const configManager = new WatchConfigManager(driver);
     
-    // Get config by path
-    const config = await configManager.getByPath(path);
+    // Get config by ID
+    const config = await configManager.getById(id);
     if (!config) {
       await driver.close();
       return res.status(404).json({ 
-        error: 'Folder not found in watch list', 
-        path
+        error: 'Watch configuration not found', 
+        id
       });
     }
 
-    // Stop watching
+    const containerPath = config.path;
+    const resolvedPath = config.host_path || config.path;
+
+    console.log(`   Container path: ${containerPath}`);
+    console.log(`   Host path: ${resolvedPath}`);
+
+    // Stop watching (use container path)
     const watchManager = getWatchManager();
-    await watchManager.stopWatch(path);
+    await watchManager.stopWatch(containerPath);
 
     // Delete watch configuration
     await configManager.delete(config.id);
@@ -222,7 +281,7 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
     const session = driver.session();
     try {
       // Ensure path ends with separator to avoid false matches (e.g., /src matching /src-other)
-      const folderPathWithSep = path.endsWith('/') ? path : path + '/';
+      const folderPathWithSep = containerPath.endsWith('/') ? containerPath : containerPath + '/';
       
       // Delete File nodes and their FileChunk children
       const fileResult = await session.run(
@@ -235,7 +294,7 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
         `,
         { 
           folderPathWithSep,
-          exactPath: path
+          exactPath: containerPath
         }
       );
       
@@ -251,8 +310,9 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
 
     res.json({ 
       success: true, 
-      message: `Folder removed from indexing: ${path}`,
-      path
+      message: `Folder removed from indexing: ${resolvedPath}`,
+      path: resolvedPath,
+      containerPath: containerPath
     });
   } catch (error: any) {
     console.error('❌ Error removing folder from indexing:', error);
@@ -264,13 +324,117 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
 });
 
 /**
+ * PATCH /api/indexed-folders/reactivate
+ * Reactivates an inactive watch configuration
+ */
+router.patch('/indexed-folders/reactivate', async (req: Request, res: Response) => {
+  let driver: neo4j.Driver | null = null;
+  
+  try {
+    const { id } = req.body;
+
+    if (!id) {
+      return res.status(400).json({ error: 'Watch config ID is required' });
+    }
+
+    console.log(`🔄 Reactivating watch config by ID: ${id}`);
+
+    driver = neo4j.driver(
+      process.env.NEO4J_URI || 'bolt://localhost:7687',
+      neo4j.auth.basic(
+        process.env.NEO4J_USER || 'neo4j',
+        process.env.NEO4J_PASSWORD || 'your_password_here'
+      )
+    );
+
+    const configManager = new WatchConfigManager(driver);
+    
+    // Get config by ID
+    const config = await configManager.getById(id);
+    
+    if (!config) {
+      return res.status(404).json({ 
+        error: 'Watch configuration not found', 
+        id
+      });
+    }
+
+    // Determine which is the host path and which is the container path
+    // If config.path looks like a host path (e.g., /Users/...), translate it
+    const hostPath = config.host_path || config.path;
+    let containerPath = config.path;
+    
+    // If path stored in DB is a host path (not already translated), translate it now
+    if (!containerPath.startsWith('/workspace') && !containerPath.startsWith('/app')) {
+      containerPath = translateHostToContainer(containerPath);
+      console.log(`   Translated path: ${config.path} -> ${containerPath}`);
+    }
+
+    console.log(`   Container path: ${containerPath}`);
+    console.log(`   Host path: ${hostPath}`);
+
+    if (config.status === 'active') {
+      return res.status(400).json({ 
+        error: 'Watch is already active', 
+        id,
+        path: hostPath
+      });
+    }
+
+    // Reactivate the watch configuration in DB
+    await configManager.reactivate(config.id);
+
+    // Start watching again in background (don't await - let it run async)
+    const watchManager = getWatchManager();
+    watchManager.startWatch({
+      id: config.id,
+      path: containerPath,  // Use translated container path
+      host_path: hostPath,  // Use host path for display
+      recursive: config.recursive,
+      debounce_ms: config.debounce_ms,
+      file_patterns: config.file_patterns,
+      ignore_patterns: config.ignore_patterns || [],
+      generate_embeddings: config.generate_embeddings || false,
+      status: 'active',
+      added_date: config.added_date,
+      last_indexed: config.last_indexed,
+      last_updated: new Date().toISOString(),
+      files_indexed: config.files_indexed || 0,
+      error: undefined
+    }).catch((error) => {
+      console.error(`❌ Background indexing error for ${config.id}:`, error);
+    });
+
+    console.log(`✅ Reactivated watch for: ${hostPath}`);
+
+    res.json({ 
+      success: true, 
+      message: `Watch reactivated: ${hostPath}`,
+      id: config.id,
+      path: hostPath,
+      containerPath: containerPath
+    });
+  } catch (error: any) {
+    console.error('❌ Error reactivating watch:', error);
+    res.status(500).json({ 
+      error: 'Failed to reactivate watch', 
+      details: error.message 
+    });
+  } finally {
+    if (driver) {
+      await driver.close();
+    }
+  }
+});
+
+/**
  * GET /api/index-config
  * Returns environment configuration for path translation
  */
 router.get('/index-config', async (req: Request, res: Response) => {
   try {
     const config = {
-      hostWorkspaceRoot: process.env.HOST_WORKSPACE_ROOT || '',
+      hostWorkspaceRoot: getHostWorkspaceRoot(),
       workspaceRoot: process.env.WORKSPACE_ROOT || '',
       home: process.env.HOME || process.env.USERPROFILE || '',
     };
@@ -301,7 +465,7 @@ router.get('/indexing-status', async (req: Request, res: Response) => {
     );
     
     const configManager = new WatchConfigManager(driver);
-    const watchConfigs = await configManager.listActive();
+    const watchConfigs = await configManager.listAll();
     
     for (const config of watchConfigs) {
       statuses.push({
@@ -440,7 +604,7 @@ router.get('/index-stats', async (req: Request, res: Response) => {
 
       // Count watched folders
       const configManager = new WatchConfigManager(driver);
-      const watchConfigs = await configManager.listActive();
+      const watchConfigs = await configManager.listAll();
 
       res.json({
         totalFolders: watchConfigs.length,
@@ -479,7 +643,6 @@ router.post('/migrate-indexed-folders', async (req: Request, res: Response) => {
 
     const session = driver.session();
     const configManager = new WatchConfigManager(driver);
-    const fs = await import('fs').then(m => m.promises);
 
     try {
       // Find all unique root folders
@@ -590,7 +753,7 @@ router.post('/api/migrate-file-paths', async (req: Request, res: Response) => {
 
     const session = driver.session();
     const workspaceRoot = process.env.WORKSPACE_ROOT || '';
-    const hostWorkspaceRoot = process.env.HOST_WORKSPACE_ROOT || '';
+    const hostWorkspaceRoot = getHostWorkspaceRoot();
 
     try {
       // Get all File nodes with old structure
@@ -819,7 +982,7 @@ router.post('/migrate-watchconfig-paths', async (req: Request, res: Response) =>
       // Helper function to translate container path to host path
       const translateToHostPath = (containerPath: string): string => {
         const containerWorkspaceRoot = process.env.WORKSPACE_ROOT || '';
-        const hostWorkspaceRoot = process.env.HOST_WORKSPACE_ROOT || '';
+        const hostWorkspaceRoot = getHostWorkspaceRoot();
         
         // Ensure root ends with separator to avoid false matches
         const rootWithSep = containerWorkspaceRoot.endsWith('/') ? containerWorkspaceRoot : `${containerWorkspaceRoot}/`;

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { requirePermission } from '../middleware/rbac.js';
+import passport from 'passport';
 
 const router = Router();
 
@@ -8,6 +9,7 @@ const router = Router();
  * POST /api/keys/generate
  * Generate a new API key for the authenticated user
  * RBAC: Requires 'keys:write' permission
+ * Note: Use /auth/token (OAuth 2.0 RFC 6749) for initial authentication
  */
 router.post('/generate', requirePermission('keys:write'), async (req: Request, res: Response) => {
   try {
@@ -115,7 +117,7 @@ router.get('/', requirePermission('keys:read'), async (req: Request, res: Respon
 
 /**
  * DELETE /api/keys/:keyId
- * Revoke an API key
+ * Revoke an API key by ID
  * RBAC: Requires 'keys:delete' permission
  */
 router.delete('/:keyId', requirePermission('keys:delete'), async (req: Request, res: Response) => {

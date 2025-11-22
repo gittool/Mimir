@@ -169,9 +169,44 @@ export function getHostWorkspaceRoot(): string {
     return defaultRoot;
   }
   
-  // Normalize and resolve the configured root
+  // When running in Docker with tilde in HOST_WORKSPACE_ROOT:
+  // Docker Compose expands ~ in volume mounts but NOT in env vars
+  // So we need to read the actual mount source from /proc/mounts
+  if (isRunningInDocker() && hostRoot.startsWith('~')) {
+    try {
+      const fs = require('fs');
+      const mounts = fs.readFileSync('/proc/mounts', 'utf-8');
+      
+      // Find the line that mounts to /workspace
+      const workspaceMount = mounts.split('\n').find((line: string) => 
+        line.includes(' /workspace ')
+      );
+      
+      if (workspaceMount) {
+        // Extract the source path (first field)
+        const sourcePath = workspaceMount.split(' ')[0];
+        console.log(`🏠 Host workspace root (from mount): ${hostRoot} -> ${sourcePath}`);
+        return normalizeSlashes(sourcePath);
+      }
+    } catch (error) {
+      console.warn(`⚠️  Could not read /proc/mounts:`, error);
+    }
+    
+    // Fallback: return unexpanded (will likely fail)
+    console.warn(`⚠️  Using unexpanded tilde path: ${hostRoot}`);
+    return normalizeSlashes(hostRoot);
+  }
+  
+  // When running in Docker without tilde, use as-is
+  if (isRunningInDocker()) {
+    const normalized = normalizeSlashes(hostRoot);
+    console.log(`🏠 Host workspace root (Docker): ${hostRoot} -> ${normalized}`);
+    return normalized;
+  }
+  
+  // When running locally (not in Docker), expand tilde and resolve normally
   const normalizedRoot = normalizeAndResolve(hostRoot);
-  console.log(`🏠 Host workspace root (from env): ${hostRoot} -> ${normalizedRoot}`);
+  console.log(`🏠 Host workspace root (local): ${hostRoot} -> ${normalizedRoot}`);
   return normalizedRoot;
 }
 
@@ -210,7 +245,43 @@ export function translateHostToContainer(hostPath: string): string {
   const normalizedPath = normalizeAndResolve(hostPath);
   
   // Get normalized host root
-  const hostRoot = getHostWorkspaceRoot();
+  const hostRootEnv = process.env.HOST_WORKSPACE_ROOT;
+  
+  if (!hostRootEnv) {
+    console.warn('⚠️  HOST_WORKSPACE_ROOT not set, cannot translate path');
+    return normalizedPath;
+  }
+  
+  // If HOST_WORKSPACE_ROOT contains tilde, we can't use it for string matching
+  // Instead, we need to figure out the actual host path from the mounted workspace
+  // Docker mounts host path to /workspace, so we can infer the mapping
+  let hostRoot: string;
+  
+  if (hostRootEnv.startsWith('~')) {
+    // We can't expand ~ reliably in Docker (os.homedir() returns container's home)
+    // So we need to infer from the normalized path itself
+    // If the path starts with common patterns, extract the workspace root
+    const pathParts = normalizedPath.split('/');
+    
+    // For paths like /Users/username/src/project, extract /Users/username/src
+    // For paths like /home/username/workspace/project, extract /home/username/workspace
+    if (pathParts.length >= 4) {
+      // Try to find a common workspace pattern
+      const possibleRoots = [
+        pathParts.slice(0, 4).join('/'),  // /Users/username/src
+        pathParts.slice(0, 5).join('/'),  // /Users/username/Documents/workspace
+      ];
+      
+      // Use the first one that makes sense (we'll verify later)
+      hostRoot = possibleRoots[0];
+      console.log(`📍 Inferred host root from path: ${hostRoot} (env has unexpanded tilde: ${hostRootEnv})`);
+    } else {
+      console.warn(`⚠️  Cannot infer host root from short path: ${normalizedPath}`);
+      hostRoot = hostRootEnv;  // Fallback
+    }
+  } else {
+    hostRoot = normalizeSlashes(hostRootEnv);
+  }
   
   // If already a container path, return as-is (idempotent)
   if (normalizedPath.startsWith('/workspace')) {

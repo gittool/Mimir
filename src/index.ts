@@ -403,11 +403,15 @@ async function restoreFileWatchers() {
   console.error('🔄 Loading watch configurations from Neo4j...');
   
   const configManager = new WatchConfigManager(graphManager.getDriver());
-  const configs = await configManager.listActive();
+  const configs = await configManager.listAll();
   
-  console.error(`Found ${configs.length} active watch configurations`);
+  // Filter to only active watches
+  const activeConfigs = configs.filter(c => c.status === 'active');
+  const inactiveCount = configs.length - activeConfigs.length;
   
-  for (const config of configs) {
+  console.error(`Found ${configs.length} watch configurations (${activeConfigs.length} active, ${inactiveCount} inactive)`);
+  
+  for (const config of activeConfigs) {
     try {
       const pathExists = await import('fs').then(fs => 
         fs.promises.access(config.path).then(() => true).catch(() => false)

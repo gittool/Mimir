@@ -10,6 +10,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
+import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -95,11 +96,31 @@ async function startHttpServer() {
   app.use(bodyParser.urlencoded({ extended: true }));
   
   app.use(cors({ 
-    origin: process.env.MCP_ALLOWED_ORIGIN || '*', 
-    methods: ['POST','GET','DELETE'], 
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+      
+      // Allow vscode-webview origins for the extension
+      if (origin.startsWith('vscode-webview://')) {
+        return callback(null, true);
+      }
+      
+      // Allow configured origin or all origins if not set
+      const allowedOrigin = process.env.MCP_ALLOWED_ORIGIN || '*';
+      if (allowedOrigin === '*') {
+        return callback(null, true);
+      }
+      
+      if (origin === allowedOrigin) {
+        return callback(null, true);
+      }
+      
+      callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['POST','GET','DELETE','PATCH','PUT'], 
     exposedHeaders: ['Mcp-Session-Id'], 
-    // Allow Accept header, custom mcp-session-id header, and Cache-Control for SSE
-    allowedHeaders: ['Content-Type', 'Accept', 'mcp-session-id', 'Cache-Control'], 
+    // OAuth 2.0 RFC 6750: Allow Authorization header for Bearer tokens
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization', 'mcp-session-id', 'Cache-Control', 'X-API-Key'], 
     credentials: true 
   }));
 
@@ -123,9 +144,9 @@ async function startHttpServer() {
     app.use(auditLogger(auditConfig));
   }
 
-  // Add session middleware (only if security enabled)
+  // Security: Authentication & RBAC (Stateless with API keys)
   if (process.env.MIMIR_ENABLE_SECURITY === 'true') {
-    console.log('🔐 Security enabled - initializing Passport.js authentication');
+    console.log('🔐 Security enabled - stateless API key authentication');
     
     if (process.env.MIMIR_ENABLE_RBAC === 'true') {
       console.log('🔒 RBAC enabled - role-based access control active');
@@ -136,37 +157,13 @@ async function startHttpServer() {
     } else {
       console.log('ℹ️  RBAC disabled - all authenticated users have full access');
     }
-    
-    // Parse session max age from env (in hours, 0 = never expire)
-    const sessionMaxAgeHours = parseInt(process.env.MIMIR_SESSION_MAX_AGE_HOURS || '24', 10);
-    
-    if (sessionMaxAgeHours === 0) {
-      console.log('🔓 Session configured to never expire');
-    } else {
-      console.log(`⏱️  Session max age: ${sessionMaxAgeHours} hours`);
-    }
-    
-    // Build cookie config - omit maxAge entirely for never-expire sessions
-    const cookieConfig: any = {
-      secure: process.env.NODE_ENV === 'production',
-      httpOnly: true
-    };
-    
-    // Only add maxAge if sessions should expire
-    if (sessionMaxAgeHours !== 0) {
-      cookieConfig.maxAge = sessionMaxAgeHours * 60 * 60 * 1000;
-    }
-    
-    app.use(session({
-      secret: process.env.MIMIR_SESSION_SECRET || 'dev-secret-change-me',
-      resave: false,
-      saveUninitialized: false,
-      cookie: cookieConfig
-    }));
-
-    app.use(passport.initialize());
-    app.use(passport.session());
   }
+
+  // Cookie parser for HTTP-only cookie authentication
+  app.use(cookieParser());
+
+  // Initialize passport for OAuth (stateless, no sessions)
+  app.use(passport.initialize());
 
   // Mount auth routes FIRST (must be public for login to work)
   // Auth routes: /auth/login, /auth/logout, /auth/status, /auth/config, /auth/oauth/callback
@@ -180,14 +177,19 @@ async function startHttpServer() {
         return next();
       }
       
-      // Try session authentication first
-      if (req.isAuthenticated && req.isAuthenticated()) {
-        return next();
-      }
+      // Check for any form of authentication:
+      // 1. Authorization: Bearer header (OAuth 2.0 RFC 6750)
+      // 2. X-API-Key header (common alternative)
+      // 3. Cookie (for browser/UI)
+      // 4. Query parameters (for SSE which can't send custom headers)
+      const authHeader = req.headers['authorization'] as string;
+      const hasAuth = authHeader || 
+                      req.headers['x-api-key'] || 
+                      req.query.access_token ||
+                      req.query.api_key;
       
-      // Try API key authentication second
-      const apiKey = req.headers['x-api-key'];
-      if (apiKey) {
+      if (hasAuth) {
+        // Let apiKeyAuth middleware handle validation
         return apiKeyAuth(req, res, next);
       }
       
@@ -416,27 +418,9 @@ async function startHttpServer() {
   // SPA catch-all route - serve index.html for all non-API routes
   // This must come AFTER all API routes but BEFORE error handlers
   // Use a regex pattern instead of '*' to avoid path-to-regexp errors
+  // Note: With stateless API key auth, the frontend handles routing/auth checks
   app.get(/^\/(?!api|v1|mcp|health|models|auth).*$/, (req, res) => {
-    console.log(`[AUTH] Catch-all hit: ${req.path}, Security: ${process.env.MIMIR_ENABLE_SECURITY}, isAuth: ${req.isAuthenticated ? req.isAuthenticated() : 'no method'}`);
-    
-    // Check authentication if security is enabled
-    if (process.env.MIMIR_ENABLE_SECURITY === 'true') {
-      // Allow /login route
-      if (req.path === '/login') {
-        console.log('[AUTH] Serving login page');
-        return res.sendFile(path.join(frontendDistPath, 'index.html'));
-      }
-      
-      // Check if user is authenticated
-      if (!req.isAuthenticated || !req.isAuthenticated()) {
-        console.log('[AUTH] Not authenticated, redirecting to /login');
-        return res.redirect('/login');
-      }
-      
-      console.log('[AUTH] Authenticated, serving app');
-    }
-    
-    // Serve index.html for all routes except API endpoints
+    // Always serve the SPA - frontend will handle auth checks via API key
     res.sendFile(path.join(frontendDistPath, 'index.html'));
   });
   

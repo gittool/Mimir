@@ -10,9 +10,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check authentication status
+    // Check authentication status (API key is in HTTP-only cookie)
     fetch('/auth/status', {
-      credentials: 'include'
+      credentials: 'include' // Send cookies
     })
       .then(res => {
         if (res.ok) {

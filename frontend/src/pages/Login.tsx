@@ -19,7 +19,7 @@ export function Login() {
 
   useEffect(() => {
     // Fetch auth configuration from server
-    fetch('/auth/config')
+    fetch('/auth/config', { credentials: 'include' })
       .then(res => res.json())
       .then(config => setAuthConfig(config))
       .catch(() => {
@@ -44,15 +44,22 @@ export function Login() {
       const response = await fetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData,
-        credentials: 'include',
-        redirect: 'manual'
+        credentials: 'include', // Receive HTTP-only cookie
+        body: formData
       });
 
-      if (response.ok || response.type === 'opaqueredirect') {
-        window.location.href = '/';
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // API key is set in HTTP-only cookie by server
+          // Redirect to home
+          window.location.href = '/';
+        } else {
+          setError('Login failed');
+        }
       } else {
-        setError('Invalid username or password');
+        const errorData = await response.json().catch(() => ({ error: 'Invalid credentials' }));
+        setError(errorData.error || 'Invalid username or password');
       }
     } catch (err) {
       setError('Login failed. Please try again.');
@@ -90,7 +97,7 @@ export function Login() {
                   Username
                 </label>
                 <input
-                  id="username"
+                  id={`username-${Math.random()}`}
                   name="username"
                   type="text"
                   required
@@ -106,7 +113,7 @@ export function Login() {
                   Password
                 </label>
                 <input
-                  id="password"
+                  id={`password-${Math.random()}`}
                   name="password"
                   type="password"
                   required
@@ -173,7 +180,9 @@ export function Login() {
                   fill="currentColor"
                   viewBox="0 0 20 20"
                   xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
                 >
+                  <title>Sign in with {provider.displayName}</title>
                   <path
                     fillRule="evenodd"
                     d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
