@@ -6,6 +6,37 @@ import { JWT_SECRET } from '../utils/jwt-secret.js';
 const router = Router();
 
 /**
+ * Get configurable token expiration in seconds
+ * Defaults to never-expiring if not configured
+ * Set to 0 or negative for never-expiring tokens (default behavior)
+ * 
+ * @returns Token expiration in seconds, or undefined for never-expiring
+ */
+function getTokenExpiration(): number | undefined {
+  const maxAgeSeconds = process.env.MIMIR_MAX_TOKEN_AGE_SECONDS;
+  
+  if (!maxAgeSeconds) {
+    // Default: never expire (stateless tokens, logout via client-side cookie deletion)
+    return undefined;
+  }
+  
+  const ageSeconds = parseInt(maxAgeSeconds, 10);
+  
+  if (isNaN(ageSeconds)) {
+    console.warn('[Auth] Invalid MIMIR_MAX_TOKEN_AGE_SECONDS, defaulting to never expire');
+    return undefined;
+  }
+  
+  // Allow 0 or negative for never-expiring (default behavior)
+  if (ageSeconds <= 0) {
+    console.log('[Auth] MIMIR_MAX_TOKEN_AGE_SECONDS <= 0: tokens will never expire (stateless, logout via client-side cookie deletion)');
+    return undefined;
+  }
+  
+  return ageSeconds;
+}
+
+/**
  * POST /auth/token
  * OAuth 2.0 RFC 6749 compliant token endpoint
  * Supports grant_type: password (Resource Owner Password Credentials)
@@ -46,28 +77,38 @@ router.post('/auth/token', async (req, res) => {
 
     try {
       // Generate JWT access token (stateless, no database storage needed)
-      const expiresInDays = 90; // 90 days for programmatic access
-      const expiresInSeconds = expiresInDays * 24 * 60 * 60;
+      const expiresInSeconds = getTokenExpiration();
       
-      const payload = {
+      const iat = Math.floor(Date.now() / 1000);
+      const payload: any = {
         sub: user.id,           // Subject (user ID)
         email: user.email,      // User email
         roles: user.roles || ['viewer'], // User roles/permissions
-        iat: Math.floor(Date.now() / 1000), // Issued at
-        exp: Math.floor(Date.now() / 1000) + expiresInSeconds // Expiration
+        iat // Issued at
       };
+      
+      // Only set expiration if configured (undefined = never expire)
+      if (expiresInSeconds !== undefined) {
+        payload.exp = iat + expiresInSeconds;
+      }
 
       const accessToken = jwt.sign(payload, JWT_SECRET, {
         algorithm: 'HS256'
       });
 
       // RFC 6749 compliant response
-      return res.json({
+      const response: any = {
         access_token: accessToken,
         token_type: 'Bearer',
-        expires_in: expiresInSeconds, // seconds
         scope: scope || 'default'
-      });
+      };
+      
+      // Only include expires_in if token actually expires
+      if (expiresInSeconds !== undefined) {
+        response.expires_in = expiresInSeconds;
+      }
+      
+      return res.json(response);
     } catch (error: any) {
       console.error('[Auth] Token generation error:', error);
       return res.status(500).json({
@@ -96,18 +137,23 @@ router.post('/auth/login', async (req, res, next) => {
     
     try {
       // STATELESS: Generate JWT token (no database storage)
-      const expiresInDays = 7;
-      const expiresInSeconds = expiresInDays * 24 * 60 * 60;
+      const expiresInSeconds = getTokenExpiration();
       
-      const payload = {
+      const iat = Math.floor(Date.now() / 1000);
+      const payload: any = {
         sub: user.id,
         email: user.email,
         roles: user.roles || ['viewer'],
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + expiresInSeconds
+        iat
       };
+      
+      // Only set expiration if configured (undefined = never expire)
+      if (expiresInSeconds !== undefined) {
+        payload.exp = iat + expiresInSeconds;
+      }
 
       const jwtToken = jwt.sign(payload, JWT_SECRET, { algorithm: 'HS256' });
+      const expiresInDays = expiresInSeconds ? Math.floor(expiresInSeconds / 86400) : 'never';
       console.log(`[Auth] JWT generated for ${user.email}, expires in ${expiresInDays} days`);
       
       // Set JWT in HTTP-only cookie (same cookie name as OAuth for consistency)
@@ -121,7 +167,7 @@ router.post('/auth/login', async (req, res, next) => {
         secure: secureValue,
         sameSite: sameSiteValue,
         path: '/',
-        maxAge: expiresInDays * 24 * 60 * 60 * 1000
+        maxAge: expiresInSeconds ? expiresInSeconds * 1000 : undefined // undefined = session cookie
       });
       
       console.log('[Auth] Cookie set with options:', { 
