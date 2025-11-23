@@ -86,6 +86,27 @@ npm run start
 
 That's it! Services will start in the background. The startup script automatically detects your platform (macOS ARM64, Linux, Windows) and uses the optimized docker-compose file.
 
+**⚠️ IMPORTANT - Configure Workspace Access:**
+
+The **ONLY required configuration** is `HOST_WORKSPACE_ROOT` in `.env`:
+
+```bash
+# Your main source code directory (default: ~/src)
+# This gives Mimir access to your code for file indexing
+HOST_WORKSPACE_ROOT=~/src
+```
+
+**What this does:**
+- Mounts your source directory to the container (default: read-write)
+- You manually choose which folders to index via UI or VSCode plugin
+- **Don't panic!** Indexing is per-folder and requires your explicit action
+
+**For read-only access**, edit `docker-compose.yml`:
+```yaml
+volumes:
+  - ${HOST_WORKSPACE_ROOT:-~/src}:${WORKSPACE_ROOT:-/workspace}:ro  # Add :ro flag
+```
+
 ### 3. Verify It's Working
 
 ```bash

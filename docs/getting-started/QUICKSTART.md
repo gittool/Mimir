@@ -1,161 +1,109 @@
 # Mimir Quick Start Guide
 
-Get Mimir running in 10 minutes with step-by-step instructions.
+Get Mimir running in 5 minutes with simple step-by-step instructions.
 
 ## Prerequisites
 
 Before starting, install these tools:
 
-- **Docker Desktop** (with 16GB RAM allocated) → https://www.docker.com/products/docker-desktop/
+- **Docker Desktop** → https://www.docker.com/products/docker-desktop/
 - **Node.js 18+** → https://nodejs.org/
 - **Git** → https://git-scm.com/
-- **GitHub Copilot Subscription** (Individual, Business, or Enterprise)
 
-> 💡 **Docker Memory**: Mimir requires Docker Desktop with **at least 16GB RAM** allocated. Check: Docker Desktop → Settings → Resources → Memory
+**System Requirements:**
+- **RAM**: 4GB minimum (Neo4j uses 512MB-2GB heap + 512MB page cache)
+- **Disk**: 2GB free space
+- **OS**: macOS, Linux, or Windows with WSL2
+
+> 💡 **Docker Memory**: Mimir needs approximately **3-4GB RAM** total. Neo4j is configured with 512MB page cache and 2GB max heap. Check: Docker Desktop → Settings → Resources → Memory
 
 ---
 
-## Step 1: Clone Repository
+## Step 1: Install & Start
 
 ```bash
+# Clone the repository
 git clone https://github.com/orneryd/Mimir.git
 cd Mimir
-```
 
----
-
-## Step 2: Configure Environment
-
-```bash
-# Copy the example environment file
+# Copy environment template
 cp env.example .env
 
-# (Optional) Edit .env to customize settings
-# Default Neo4j password is "password" - change for production!
-# Default workspace path is ~/src - change if needed
+# Start all services (automatically detects your platform)
+npm run start
+# Or manually: docker compose up -d
 ```
 
-**Key settings in `.env`:**
+That's it! Services will start in the background. The startup script automatically detects your platform (macOS ARM64, Linux, Windows) and uses the optimized docker-compose file.
+
+---
+
+## Step 2: Configure Workspace Access (REQUIRED)
+
+**⚠️ IMPORTANT**: You must configure `HOST_WORKSPACE_ROOT` in `.env` before indexing files.
+
+Edit `.env` and set your source code directory:
+
+```bash
+# Your main source code directory (will be mounted to container)
+# Examples:
+#   Windows: C:\Users\YourName\Documents\GitHub
+#   macOS:   ~/Documents/projects
+#   Linux:   ~/workspace
+HOST_WORKSPACE_ROOT=~/src
+```
+
+**What this does:**
+- Gives Mimir access to your source code for file indexing
+- Default mount is **read-write** (allows file editing)
+- You manually choose which folders to index via UI or VSCode plugin
+
+**For read-only access**, edit `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ./data:/app/data
+  - ./logs:/app/logs
+  - ${HOST_WORKSPACE_ROOT:-~/src}:${WORKSPACE_ROOT:-/workspace}:ro  # Add :ro for read-only
+```
+
+**Other optional settings:**
 ```bash
 NEO4J_PASSWORD=password          # Change in production!
-HOST_WORKSPACE_ROOT=~/src        # Your code workspace
+MIMIR_DEFAULT_PROVIDER=openai    # LLM provider (openai, copilot, ollama)
+MIMIR_DEFAULT_MODEL=gpt-4.1      # LLM model
 ```
 
 ---
 
-## Step 3: Build Docker Images
+## Step 3: Verify Services
 
 ```bash
-# Build the MCP server Docker image
-npm run build:docker
-```
-
-This command:
-- Builds the TypeScript MCP server
-- Creates a Docker image with all dependencies
-- Takes 2-5 minutes on first run
-
----
-
-## Step 4: Start All Services
-
-```bash
-# Start Neo4j, Copilot API, and Mimir Server (with Web UI)
-docker compose up
-```
-
-> ⚠️ **Important**: Do NOT use `-d` (detached mode) on first run. You need to see the logs for authentication.
-
-You'll see logs from multiple services starting up. **This is normal:**
-- `neo4j_db` - Database initialization
-- `copilot_api_server` - GitHub authentication
-- `mimir-server` - MCP server + Web UI startup
-
-> 💡 **Note**: Open-WebUI is optional and disabled by default. To enable it, uncomment the `open-webui` service in `docker-compose.yml`.
-
----
-
-## Step 5: Authenticate with GitHub Copilot
-
-### If Already Logged In
-
-If you see this message, you're good to go:
-```
-copilot_api_server  | ✔ Logged in as <your-github-username>
-copilot_api_server  | ℹ Available models:
-copilot_api_server  | - gpt-4.1
-copilot_api_server  | - gpt-4o
-copilot_api_server  | - o1-preview
-```
-
-**Skip to Step 6!**
-
-### If NOT Logged In
-
-You'll see this message (possibly intermixed with Neo4j logs):
-
-```
-copilot_api_server  | ℹ Not logged in, getting new access token
-copilot_api_server  | ℹ Please enter the code "HD56-PAQW" in https://github.com/login/device
-```
-
-**Follow these steps QUICKLY (you have ~5 minutes):**
-
-1. **Copy the 8-digit code** (e.g., `HD56-PAQW`)
-2. **Open the URL** in your browser: https://github.com/login/device
-3. **Paste the code** and authorize GitHub Copilot
-4. **Wait for confirmation** in the terminal:
-   ```
-   copilot_api_server  | ✔ Logged in as <your-github-username>
-   ```
-
-> 💡 **Tip**: The logs might be intermixed with Neo4j startup messages. Look for lines starting with `copilot_api_server`.
-
-> ⏱️ **Timing**: If you authenticate fast enough (within 1-2 minutes), the health checks will pass automatically. If you're too slow, you may need to restart: `docker compose restart copilot-api`
-
----
-
-## Step 6: Verify Services Are Running
-
-Once all services are healthy, you should see:
-
-```
-copilot_api_server  | ✔ Logged in as <username>
-copilot_api_server  | ℹ Available models: ...
-mcp_server          | MCP server listening on port 3000
-neo4j_db            | Started.
-```
-
-**Check service status:**
-```bash
-# In a new terminal (keep docker compose up running)
-docker compose ps
+# Check that all services are running
+npm run status
+# Or manually: docker compose ps
 ```
 
 You should see all services as `healthy`:
 ```
 NAME                  STATUS
-neo4j_db              Up (healthy)
-copilot_api_server    Up (healthy)
+neo4j                 Up (healthy)
+copilot-api           Up (healthy)  [Optional - only if using Copilot]
 mimir-server          Up (healthy)
 ```
 
-**Test the endpoints:**
+**Access the services:**
 ```bash
-# Mimir Web UI (Portal + File Indexing)
+# Mimir Web UI (Portal + File Indexing + Orchestration)
 open http://localhost:9042
 
-# Neo4j Browser (should open in browser)
+# Neo4j Browser
 open http://localhost:7474
-# Username: neo4j, Password: password
+# Username: neo4j, Password: password (or your custom password)
 
-# Mimir API Health Check
+# Health Check
 curl http://localhost:9042/health
 # Should return: {"status":"ok"}
-
-# Copilot API Models
-curl http://localhost:4141/v1/models
-# Should return JSON with available models
 ```
 
 **📚 Documentation Auto-Indexed:**
@@ -175,7 +123,7 @@ MIMIR_AUTO_INDEX_DOCS=false
 
 ---
 
-## Step 7: Access Mimir Web UI
+## Step 4: Access Mimir Web UI
 
 The Mimir Web UI provides a portal with file indexing and access to all features:
 
@@ -207,19 +155,32 @@ If you want a ChatGPT-like interface:
 
 ---
 
-## Step 8: (Optional) Run in Background
+## Step 5: (Optional) Configure LLM Provider
 
-Once authenticated and verified, you can run in detached mode:
+By default, Mimir uses the Copilot API proxy (requires GitHub Copilot subscription). To use other providers:
 
+**Option 1: OpenAI Direct**
 ```bash
-# Stop the current run (Ctrl+C)
-docker compose down
+# Edit .env
+MIMIR_DEFAULT_PROVIDER=openai
+MIMIR_LLM_API=https://api.openai.com/v1
+MIMIR_LLM_API_KEY=sk-your-api-key
+```
 
-# Start in background
-docker compose up -d
+**Option 2: Local Ollama**
+```bash
+# Edit .env
+MIMIR_DEFAULT_PROVIDER=ollama
+MIMIR_LLM_API=http://host.docker.internal:11434
+MIMIR_DEFAULT_MODEL=llama3.1
+```
 
-# View logs anytime
-docker compose logs -f
+See [LLM Provider Guide](../guides/LLM_PROVIDER_GUIDE.md) for detailed configuration.
+
+**Restart after changes:**
+```bash
+npm run restart
+# Or: docker compose restart mimir-server
 ```
 
 ---
