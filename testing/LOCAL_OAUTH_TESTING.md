@@ -62,18 +62,33 @@ Add to your `.env` file:
 ```bash
 # Enable security
 MIMIR_ENABLE_SECURITY=true
-
-# Local OAuth Provider (explicit endpoint URLs - no hardcoded paths!)
 MIMIR_AUTH_PROVIDER=oauth
-MIMIR_OAUTH_AUTHORIZATION_URL=http://localhost:8888/oauth2/v1/authorize
-MIMIR_OAUTH_TOKEN_URL=http://localhost:8888/oauth2/v1/token
-MIMIR_OAUTH_USERINFO_URL=http://localhost:8888/oauth2/v1/userinfo
+MIMIR_ENV=development
+
+# JWT Secret (required for stateless auth)
+MIMIR_JWT_SECRET=test-secret-12345
+
+# Local OAuth Provider Configuration
+# IMPORTANT: Use explicit endpoint URLs - different providers have different paths!
+# - Use host.docker.internal for token/userinfo endpoints (server-side requests from container)
+# - Use localhost for authorization endpoint (browser redirects from client)
 MIMIR_OAUTH_CLIENT_ID=mimir-local-test
 MIMIR_OAUTH_CLIENT_SECRET=local-test-secret-123
 MIMIR_OAUTH_CALLBACK_URL=http://localhost:9042/auth/oauth/callback
-MIMIR_OAUTH_PROVIDER_NAME=Local Test OAuth
+MIMIR_OAUTH_AUTHORIZATION_URL=http://localhost:8888/oauth2/v1/authorize
+MIMIR_OAUTH_TOKEN_URL=http://host.docker.internal:8888/oauth2/v1/token
+MIMIR_OAUTH_USERINFO_URL=http://host.docker.internal:8888/oauth2/v1/userinfo
 MIMIR_OAUTH_ALLOW_HTTP=true  # Required for local HTTP OAuth testing
+
+# Optional: Customize provider display name
+# MIMIR_OAUTH_PROVIDER_NAME=Local Test OAuth
 ```
+
+**Important Notes:**
+- **Authorization URL** uses `localhost` because the browser makes this request
+- **Token/Userinfo URLs** use `host.docker.internal` if running Mimir in Docker (server-side requests)
+- If running Mimir natively (not in Docker), use `localhost` for all URLs
+- `MIMIR_OAUTH_ALLOW_HTTP=true` is required to bypass HTTPS enforcement for local testing
 
 ### 3. Start Mimir
 

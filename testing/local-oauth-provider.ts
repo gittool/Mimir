@@ -296,7 +296,6 @@ app.listen(PORT, () => {
   console.log(`\n🚀 Local OAuth Provider running on http://localhost:${PORT}`);
   console.log(`\n📋 Configuration for .env file:`);
   console.log(`MIMIR_AUTH_PROVIDER=oauth`);
-  console.log(`MIMIR_OAUTH_ISSUER=${ISSUER}`);
   console.log(`MIMIR_OAUTH_CLIENT_ID=${CLIENT_ID}`);
   console.log(`MIMIR_OAUTH_CLIENT_SECRET=${CLIENT_SECRET}`);
   console.log(`MIMIR_OAUTH_CALLBACK_URL=http://localhost:9042/auth/oauth/callback`);
