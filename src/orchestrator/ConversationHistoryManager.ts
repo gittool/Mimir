@@ -58,6 +58,26 @@ export class ConversationHistoryManager {
 
   /**
    * Initialize the conversation history system
+   * 
+   * Sets up vector embeddings service and creates necessary Neo4j indexes
+   * for conversation message storage and retrieval.
+   * 
+   * Must be called before using any other methods. Safe to call multiple times
+   * (subsequent calls are no-ops).
+   * 
+   * @returns Promise that resolves when initialization is complete
+   * 
+   * @example
+   * ```ts
+   * const driver = neo4j.driver('bolt://localhost:7687');
+   * const manager = new ConversationHistoryManager(driver);
+   * 
+   * await manager.initialize();
+   * // Output: ✅ ConversationHistoryManager: Vector-based retrieval enabled
+   * 
+   * // Now ready to store and retrieve messages
+   * await manager.addMessage('session-1', 'user', 'How do I use Docker?');
+   * ```
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;

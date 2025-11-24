@@ -18,6 +18,66 @@ interface BenchmarkTask {
   };
 }
 
+/**
+ * Validate an agent against a benchmark task
+ * 
+ * Executes a comprehensive validation workflow:
+ * 1. Loads benchmark task with rubric
+ * 2. Initializes agent with specified model
+ * 3. Executes benchmark task
+ * 4. Evaluates output against rubric
+ * 5. Generates detailed reports (JSON + Markdown)
+ * 
+ * The validation process measures agent performance across multiple
+ * categories defined in the benchmark rubric.
+ * 
+ * @param agentPath - Path to agent preamble file (.md)
+ * @param benchmarkPath - Path to benchmark task file (.json)
+ * @param outputDir - Directory to save validation reports
+ * @param model - LLM model to use for agent execution
+ * @returns Promise that resolves when validation is complete
+ * 
+ * @example
+ * ```ts
+ * // Validate a worker agent
+ * await validateAgent(
+ *   'generated-agents/worker-a3f2b8c1.md',
+ *   'benchmarks/golang-crypto.json',
+ *   'validation-results',
+ *   'gpt-4.1'
+ * );
+ * // Output:
+ * // 🔍 Validating agent: generated-agents/worker-a3f2b8c1.md
+ * // 📋 Benchmark: benchmarks/golang-crypto.json
+ * // 🤖 Using model: gpt-4.1
+ * // ⚙️  Executing benchmark task...
+ * // ✅ Task completed - Tool calls: 12, Tokens: 3500
+ * // 📊 Evaluating output against rubric...
+ * // 📈 Total score: 85/100
+ * // 📄 Report saved to: validation-results/2025-11-24_worker-a3f2b8c1.md
+ * 
+ * // Benchmark JSON format:
+ * // {
+ * //   "name": "Golang Cryptography Task",
+ * //   "description": "Implement RSA encryption",
+ * //   "task": "Create a Go program that...",
+ * //   "rubric": {
+ * //     "categories": [
+ * //       {
+ * //         "name": "Correctness",
+ * //         "maxPoints": 30,
+ * //         "criteria": ["Implements RSA correctly", "Handles edge cases"]
+ * //       },
+ * //       {
+ * //         "name": "Code Quality",
+ * //         "maxPoints": 25,
+ * //         "criteria": ["Well-structured", "Good error handling"]
+ * //       }
+ * //     ]
+ * //   }
+ * // }
+ * ```
+ */
 async function validateAgent(
   agentPath: string,
   benchmarkPath: string,

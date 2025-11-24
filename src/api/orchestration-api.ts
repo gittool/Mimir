@@ -24,6 +24,39 @@ import { handleVectorSearchNodes } from '../tools/vectorSearch.tools.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * Create Express router for orchestration API endpoints
+ * 
+ * Provides HTTP endpoints for multi-agent orchestration, workflow execution,
+ * and agent management. Includes endpoints for:
+ * - Agent listing and search
+ * - Workflow execution (PM → Workers → QC)
+ * - Task management
+ * - Agent preamble retrieval
+ * - Vector search integration
+ * 
+ * @param graphManager - Graph manager instance for Neo4j operations
+ * @returns Configured Express router with all orchestration endpoints
+ * 
+ * @example
+ * ```ts
+ * import express from 'express';
+ * import { GraphManager } from './managers/GraphManager.js';
+ * import { createOrchestrationRouter } from './api/orchestration-api.js';
+ * 
+ * const app = express();
+ * const graphManager = new GraphManager(driver);
+ * 
+ * // Mount orchestration routes
+ * app.use('/api', createOrchestrationRouter(graphManager));
+ * 
+ * // Available endpoints:
+ * // GET  /api/agents - List agents with search
+ * // POST /api/execute-workflow - Execute multi-agent workflow
+ * // GET  /api/tasks/:id - Get task status
+ * // POST /api/vector-search - Semantic search
+ * ```
+ */
 export function createOrchestrationRouter(graphManager: IGraphManager): Router {
   const router = Router();
 

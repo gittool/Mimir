@@ -87,11 +87,40 @@ export class ReciprocalRankFusion {
   }
   
   /**
-   * Fuse multiple ranked lists using RRF
+   * Fuse multiple ranked lists using Reciprocal Rank Fusion
    * 
-   * @param vectorResults - Results from vector search (ranked by cosine similarity)
-   * @param bm25Results - Results from BM25 keyword search (ranked by relevance)
-   * @returns Fused results sorted by RRF score
+   * Combines results from vector search (semantic) and BM25 search (keyword)
+   * into a single ranked list. This hybrid approach leverages the strengths
+   * of both search methods:
+   * - Vector search: Understands semantic meaning and context
+   * - BM25 search: Excels at exact keyword matching
+   * 
+   * The RRF formula gives higher scores to documents that appear in both
+   * result sets and rank highly in either. Documents appearing in only one
+   * result set can still score well if they rank highly there.
+   * 
+   * @param vectorResults - Results from vector/semantic search, ranked by cosine similarity
+   * @param bm25Results - Results from BM25 keyword search, ranked by relevance score
+   * @returns Fused results sorted by RRF score (highest first), with rank metadata
+   * 
+   * @example
+   * ```ts
+   * const rrf = new ReciprocalRankFusion({ k: 60 });
+   * 
+   * const vectorResults = [
+   *   { id: 'doc1', title: 'Machine Learning', similarity: 0.95, ... },
+   *   { id: 'doc2', title: 'Deep Learning', similarity: 0.88, ... }
+   * ];
+   * 
+   * const bm25Results = [
+   *   { id: 'doc2', title: 'Deep Learning', ... },
+   *   { id: 'doc3', title: 'Neural Networks', ... }
+   * ];
+   * 
+   * const fused = rrf.fuse(vectorResults, bm25Results);
+   * // doc2 appears in both lists, so it gets highest RRF score
+   * // Result: [doc2, doc1, doc3] with rrfScore, vectorRank, bm25Rank
+   * ```
    */
   fuse(
     vectorResults: SearchResult[],
@@ -160,8 +189,38 @@ export class ReciprocalRankFusion {
   /**
    * Get adaptive RRF configuration based on query characteristics
    * 
-   * @param query - The search query
-   * @returns Optimized RRF config for the query type
+   * Automatically selects the best RRF profile based on query length:
+   * - Short queries (1-2 words): Emphasize keyword matching (KEYWORD profile)
+   *   Example: "docker compose" → Better with exact term matching
+   * - Long queries (6+ words): Emphasize semantic understanding (SEMANTIC profile)
+   *   Example: "How do I configure Docker containers for production?" → Better with semantic search
+   * - Medium queries (3-5 words): Balanced approach (BALANCED profile)
+   *   Example: "configure docker production" → Equal weight to both
+   * 
+   * This adaptive approach improves search quality without requiring manual
+   * configuration for each query type.
+   * 
+   * @param query - The search query string
+   * @returns Optimized RRF configuration for the query type
+   * 
+   * @example
+   * ```ts
+   * // Short query - emphasizes keyword matching
+   * const config1 = ReciprocalRankFusion.getAdaptiveConfig('docker');
+   * // Returns: { k: 60, vectorWeight: 0.5, bm25Weight: 1.5, ... }
+   * 
+   * // Long query - emphasizes semantic understanding
+   * const config2 = ReciprocalRankFusion.getAdaptiveConfig(
+   *   'How do I set up a development environment with Docker and Node.js?'
+   * );
+   * // Returns: { k: 60, vectorWeight: 1.5, bm25Weight: 0.5, ... }
+   * 
+   * // Use adaptive config for search
+   * const rrf = new ReciprocalRankFusion(
+   *   ReciprocalRankFusion.getAdaptiveConfig(userQuery)
+   * );
+   * const results = rrf.fuse(vectorResults, bm25Results);
+   * ```
    */
   static getAdaptiveConfig(query: string): RRFConfig {
     const words = query.trim().split(/\s+/);

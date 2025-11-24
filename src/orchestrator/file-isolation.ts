@@ -30,7 +30,35 @@ interface VirtualFile {
 }
 
 /**
- * Sandboxed filesystem for testing agents
+ * Sandboxed filesystem for testing agents safely
+ * 
+ * Provides multiple isolation strategies to prevent agents from accidentally
+ * modifying the repository during testing:
+ * 
+ * **Isolation Modes:**
+ * - **virtual**: All operations in-memory, nothing touches disk
+ * - **restricted**: Only allow operations in whitelisted directories
+ * - **readonly**: Allow reads, block all writes/deletes
+ * - **disabled**: No restrictions (use with caution)
+ * 
+ * All operations are logged for analysis and debugging.
+ * 
+ * @example
+ * ```ts
+ * // Virtual mode - safest for testing
+ * const isolation = new FileIsolationManager('virtual');
+ * await isolation.writeFile('/test.txt', 'content');
+ * // File stored in memory, not on disk
+ * 
+ * // Restricted mode - limit to specific directories
+ * const isolation = new FileIsolationManager('restricted', ['/tmp/agent-test']);
+ * await isolation.writeFile('/tmp/agent-test/file.txt', 'ok'); // Allowed
+ * await isolation.writeFile('/etc/passwd', 'bad'); // Blocked
+ * 
+ * // Get operation log
+ * const summary = isolation.getSummary();
+ * console.log(`Blocked operations: ${summary.blocked}`);
+ * ```
  */
 export class FileIsolationManager {
   private mode: IsolationMode;
@@ -133,7 +161,31 @@ export class FileIsolationManager {
   }
 
   /**
-   * Read file (respects isolation mode)
+   * Read file with isolation enforcement
+   * 
+   * In virtual mode, checks in-memory filesystem first, then falls back to real FS.
+   * In restricted/readonly modes, enforces access controls.
+   * 
+   * @param filepath - Path to file to read
+   * @returns File content as string
+   * @throws Error if path is blocked or file doesn't exist
+   * 
+   * @example
+   * ```ts
+   * const isolation = new FileIsolationManager('virtual');
+   * 
+   * // Read from virtual FS
+   * await isolation.writeFile('/test.txt', 'hello');
+   * const content = await isolation.readFile('/test.txt');
+   * console.log(content); // 'hello'
+   * 
+   * // Blocked patterns are rejected
+   * try {
+   *   await isolation.readFile('/node_modules/package/index.js');
+   * } catch (error) {
+   *   console.log(error.message); // 'File read blocked: ...'
+   * }
+   * ```
    */
   async readFile(filepath: string): Promise<string> {
     const check = this.isPathAllowed(filepath, 'read');
@@ -164,7 +216,30 @@ export class FileIsolationManager {
   }
 
   /**
-   * Write file (respects isolation mode)
+   * Write file with isolation enforcement
+   * 
+   * In virtual mode, stores in memory. In restricted mode, checks whitelist.
+   * In readonly mode, blocks all writes.
+   * 
+   * @param filepath - Path to file to write
+   * @param content - Content to write
+   * @throws Error if write is blocked by isolation mode
+   * 
+   * @example
+   * ```ts
+   * // Virtual mode - safe testing
+   * const isolation = new FileIsolationManager('virtual');
+   * await isolation.writeFile('/output.txt', 'result');
+   * // Stored in memory, not on disk
+   * 
+   * // Readonly mode - blocks writes
+   * const readonly = new FileIsolationManager('readonly');
+   * try {
+   *   await readonly.writeFile('/test.txt', 'data');
+   * } catch (error) {
+   *   console.log(error.message); // 'File write blocked: Readonly mode...'
+   * }
+   * ```
    */
   async writeFile(filepath: string, content: string): Promise<void> {
     const check = this.isPathAllowed(filepath, 'write');
@@ -231,7 +306,28 @@ export class FileIsolationManager {
   }
 
   /**
-   * Get operations summary
+   * Get summary statistics of all file operations
+   * 
+   * @returns Object with operation counts and statistics
+   * 
+   * @example
+   * ```ts
+   * const isolation = new FileIsolationManager('virtual');
+   * await isolation.writeFile('/test1.txt', 'a');
+   * await isolation.writeFile('/test2.txt', 'b');
+   * await isolation.readFile('/test1.txt');
+   * 
+   * const summary = isolation.getSummary();
+   * console.log(summary);
+   * // {
+   * //   totalOperations: 3,
+   * //   reads: 1,
+   * //   writes: 2,
+   * //   deletes: 0,
+   * //   blocked: 0,
+   * //   virtualFiles: 2
+   * // }
+   * ```
    */
   getSummary(): {
     totalOperations: number;
@@ -252,7 +348,33 @@ export class FileIsolationManager {
   }
 
   /**
-   * Generate detailed operations log (Markdown format)
+   * Generate detailed operations log in Markdown format
+   * 
+   * Creates a comprehensive report including:
+   * - Operation summary statistics
+   * - Timeline of all operations
+   * - List of virtual files in memory
+   * - List of blocked operations
+   * 
+   * @returns Markdown-formatted log string
+   * 
+   * @example
+   * ```ts
+   * const isolation = new FileIsolationManager('restricted', ['/tmp/test']);
+   * await isolation.writeFile('/tmp/test/ok.txt', 'allowed');
+   * try {
+   *   await isolation.writeFile('/etc/passwd', 'blocked');
+   * } catch {}
+   * 
+   * const log = isolation.generateOperationsLog();
+   * console.log(log);
+   * // # File Operations Log
+   * // **Mode:** restricted
+   * // **Total Operations:** 2
+   * // - Writes: 2
+   * // - Blocked: 1
+   * // ...
+   * ```
    */
   generateOperationsLog(): string {
     const summary = this.getSummary();
@@ -310,7 +432,23 @@ export class FileIsolationManager {
   }
 
   /**
-   * Export all virtual files as JSON
+   * Export all virtual files as JSON object
+   * 
+   * @returns Object mapping file paths to their content
+   * 
+   * @example
+   * ```ts
+   * const isolation = new FileIsolationManager('virtual');
+   * await isolation.writeFile('/test1.txt', 'content1');
+   * await isolation.writeFile('/test2.txt', 'content2');
+   * 
+   * const files = isolation.exportVirtualFiles();
+   * console.log(files);
+   * // {
+   * //   '/test1.txt': 'content1',
+   * //   '/test2.txt': 'content2'
+   * // }
+   * ```
    */
   exportVirtualFiles(): Record<string, string> {
     const exported: Record<string, string> = {};
@@ -321,7 +459,25 @@ export class FileIsolationManager {
   }
 
   /**
-   * Save virtual files to disk (after testing)
+   * Save all virtual files to disk after testing
+   * 
+   * Writes all in-memory files to the specified output directory,
+   * preserving the relative path structure.
+   * 
+   * @param outputDir - Directory to save files to
+   * 
+   * @example
+   * ```ts
+   * const isolation = new FileIsolationManager('virtual');
+   * await isolation.writeFile('/workspace/output.txt', 'result');
+   * await isolation.writeFile('/workspace/data.json', '{"key": "value"}');
+   * 
+   * // After testing, save to disk
+   * await isolation.saveVirtualFiles('/tmp/test-results');
+   * // Creates:
+   * // /tmp/test-results/workspace/output.txt
+   * // /tmp/test-results/workspace/data.json
+   * ```
    */
   async saveVirtualFiles(outputDir: string): Promise<void> {
     for (const [filepath, file] of this.virtualFS) {
@@ -332,7 +488,19 @@ export class FileIsolationManager {
   }
 
   /**
-   * Clear all virtual files and operations (for next test)
+   * Clear all virtual files and operation logs
+   * 
+   * Resets the isolation manager to a clean state for the next test.
+   * 
+   * @example
+   * ```ts
+   * const isolation = new FileIsolationManager('virtual');
+   * await isolation.writeFile('/test.txt', 'data');
+   * console.log(isolation.getSummary().virtualFiles); // 1
+   * 
+   * isolation.reset();
+   * console.log(isolation.getSummary().virtualFiles); // 0
+   * ```
    */
   reset(): void {
     this.virtualFS.clear();
@@ -341,7 +509,28 @@ export class FileIsolationManager {
 }
 
 /**
- * Create isolated filesystem for testing
+ * Create isolated filesystem manager for agent testing
+ * 
+ * Factory function to create a FileIsolationManager with the specified mode.
+ * 
+ * @param mode - Isolation mode (virtual, restricted, readonly, disabled)
+ * @param allowedDirs - Optional array of allowed directories (for restricted mode)
+ * @returns Configured FileIsolationManager instance
+ * 
+ * @example
+ * ```ts
+ * // Virtual mode for safe testing
+ * const isolation = createFileIsolation('virtual');
+ * 
+ * // Restricted mode with whitelist
+ * const restricted = createFileIsolation('restricted', [
+ *   '/tmp/agent-sandbox',
+ *   '/workspace/output'
+ * ]);
+ * 
+ * // Readonly mode for analysis
+ * const readonly = createFileIsolation('readonly');
+ * ```
  */
 export function createFileIsolation(
   mode: IsolationMode = 'virtual',

@@ -21,16 +21,35 @@ interface WorkspaceContext {
 const workspaceStorage = new AsyncLocalStorage<WorkspaceContext>();
 
 /**
- * Translate host path to container path
+ * Translate host filesystem path to container filesystem path
  * 
- * Docker volume mounts map host paths to container paths.
- * Example: /Users/name/src → /workspace
+ * When running in Docker, VSCode sends paths from the host filesystem
+ * (e.g., /Users/john/src/project), but tools need container paths
+ * (e.g., /workspace/project). This function performs the translation.
  * 
- * If the incoming path is under HOST_WORKSPACE_ROOT, translate it.
- * Otherwise, assume it's already a container path or use as-is.
+ * The translation uses environment variables:
+ * - HOST_WORKSPACE_ROOT: Root directory on host (e.g., /Users/john/src)
+ * - WORKSPACE_ROOT: Mounted directory in container (e.g., /workspace)
  * 
- * @param hostPath Path from VSCode (host filesystem)
- * @returns Path that works inside container
+ * If the path is not under HOST_WORKSPACE_ROOT, it's returned as-is
+ * with a warning (may indicate an unmounted path).
+ * 
+ * @param hostPath - Path from host filesystem (typically from VSCode)
+ * @returns Translated path for container filesystem, or original if not under mounted root
+ * 
+ * @example
+ * ```ts
+ * // Environment: HOST_WORKSPACE_ROOT=/Users/john/src, WORKSPACE_ROOT=/workspace
+ * 
+ * translatePathToContainer('/Users/john/src/project/file.ts');
+ * // Returns: '/workspace/project/file.ts'
+ * 
+ * translatePathToContainer('/Users/john/src');
+ * // Returns: '/workspace'
+ * 
+ * translatePathToContainer('/tmp/other');
+ * // Returns: '/tmp/other' (with warning - not under mounted root)
+ * ```
  */
 function translatePathToContainer(hostPath: string): string {
   // Get environment variables for path mapping
@@ -66,18 +85,61 @@ function translatePathToContainer(hostPath: string): string {
 }
 
 /**
- * Run a function with workspace context
+ * Run a function with workspace context using AsyncLocalStorage
  * 
- * Automatically translates host paths to container paths if running in Docker.
+ * Establishes a workspace context for the duration of the function execution.
+ * The context is automatically propagated through all async calls without
+ * needing to pass it explicitly as a parameter.
+ * 
+ * This is particularly useful for:
+ * - Setting working directory for tool execution
+ * - Tracking session IDs across async operations
+ * - Passing metadata without polluting function signatures
+ * 
+ * When running in Docker, automatically translates host paths to container paths.
+ * 
+ * @param context - Workspace context with working directory and optional metadata
+ * @param fn - Function to execute with the context
+ * @returns Promise resolving to the function's return value
  * 
  * @example
+ * ```ts
+ * // Basic usage with working directory
  * await runWithWorkspaceContext(
- *   { workingDirectory: '/Users/name/src/project' }, // Host path from VSCode
+ *   { workingDirectory: '/Users/john/src/project' },
  *   async () => {
- *     await agent.execute('Create a file');
- *     // Tools will use /workspace/project (container path)
+ *     const cwd = getWorkingDirectory();
+ *     console.log(cwd); // '/workspace/project' (if in Docker)
+ *     await agent.execute('Create README.md');
  *   }
  * );
+ * 
+ * // With session tracking
+ * await runWithWorkspaceContext(
+ *   {
+ *     workingDirectory: '/workspace/project',
+ *     sessionId: 'session-123',
+ *     metadata: { userId: 'user-456' }
+ *   },
+ *   async () => {
+ *     const ctx = getWorkspaceContext();
+ *     console.log(ctx.sessionId); // 'session-123'
+ *   }
+ * );
+ * 
+ * // Nested contexts (inner context takes precedence)
+ * await runWithWorkspaceContext(
+ *   { workingDirectory: '/workspace/outer' },
+ *   async () => {
+ *     await runWithWorkspaceContext(
+ *       { workingDirectory: '/workspace/inner' },
+ *       async () => {
+ *         console.log(getWorkingDirectory()); // '/workspace/inner'
+ *       }
+ *     );
+ *   }
+ * );
+ * ```
  */
 export function runWithWorkspaceContext<T>(
   context: WorkspaceContext,
@@ -93,10 +155,26 @@ export function runWithWorkspaceContext<T>(
 }
 
 /**
- * Get current workspace context (if any)
+ * Get current workspace context from AsyncLocalStorage
  * 
- * Returns the working directory set by runWithWorkspaceContext,
- * or falls back to process.cwd() if no context is set.
+ * Retrieves the workspace context established by runWithWorkspaceContext.
+ * Returns undefined if no context is currently active.
+ * 
+ * This is useful for tools that need to access workspace metadata
+ * without having it passed explicitly as parameters.
+ * 
+ * @returns Current workspace context, or undefined if not in a context
+ * 
+ * @example
+ * ```ts
+ * const context = getWorkspaceContext();
+ * if (context) {
+ *   console.log('Working in:', context.workingDirectory);
+ *   console.log('Session:', context.sessionId);
+ * } else {
+ *   console.log('No workspace context active');
+ * }
+ * ```
  */
 export function getWorkspaceContext(): WorkspaceContext | undefined {
   return workspaceStorage.getStore();
@@ -105,8 +183,29 @@ export function getWorkspaceContext(): WorkspaceContext | undefined {
 /**
  * Get working directory for tool execution
  * 
- * Prefers workspace context, falls back to process.cwd()
- * Returns container-translated paths when in Docker.
+ * Returns the working directory from the current workspace context,
+ * or falls back to process.cwd() if no context is active.
+ * 
+ * When running in Docker, paths are automatically translated to
+ * container paths by runWithWorkspaceContext.
+ * 
+ * @returns Working directory path (container path if in Docker)
+ * 
+ * @example
+ * ```ts
+ * // Inside a workspace context
+ * await runWithWorkspaceContext(
+ *   { workingDirectory: '/workspace/project' },
+ *   async () => {
+ *     const cwd = getWorkingDirectory();
+ *     console.log(cwd); // '/workspace/project'
+ *   }
+ * );
+ * 
+ * // Outside a workspace context
+ * const cwd = getWorkingDirectory();
+ * console.log(cwd); // process.cwd()
+ * ```
  */
 export function getWorkingDirectory(): string {
   const context = getWorkspaceContext();
@@ -114,14 +213,40 @@ export function getWorkingDirectory(): string {
 }
 
 /**
- * Check if running in workspace context
+ * Check if currently running within a workspace context
+ * 
+ * @returns true if inside a runWithWorkspaceContext call, false otherwise
+ * 
+ * @example
+ * ```ts
+ * if (hasWorkspaceContext()) {
+ *   console.log('Using workspace:', getWorkingDirectory());
+ * } else {
+ *   console.log('No workspace context - using cwd');
+ * }
+ * ```
  */
 export function hasWorkspaceContext(): boolean {
   return workspaceStorage.getStore() !== undefined;
 }
 
 /**
- * Check if running in Docker container
+ * Check if the application is running inside a Docker container
+ * 
+ * Detects Docker environment by checking for WORKSPACE_ROOT environment variable,
+ * which is set in the Docker container configuration.
+ * 
+ * @returns true if running in Docker, false if running locally
+ * 
+ * @example
+ * ```ts
+ * if (isRunningInDocker()) {
+ *   console.log('Running in container');
+ *   console.log('Container workspace:', process.env.WORKSPACE_ROOT);
+ * } else {
+ *   console.log('Running locally');
+ * }
+ * ```
  */
 export function isRunningInDocker(): boolean {
   return process.env.WORKSPACE_ROOT !== undefined;

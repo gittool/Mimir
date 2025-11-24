@@ -13,7 +13,36 @@ export interface DataRetentionConfig {
 }
 
 /**
- * Load data retention configuration from environment
+ * Load data retention configuration from environment variables
+ * 
+ * Configures automatic cleanup of old data based on retention policies.
+ * By default, data is kept forever (retention = 0 days).
+ * 
+ * **Environment Variables:**
+ * - `MIMIR_DATA_RETENTION_ENABLED`: Enable/disable retention (default: false)
+ * - `MIMIR_DATA_RETENTION_DEFAULT_DAYS`: Default retention in days (0 = forever)
+ * - `MIMIR_DATA_RETENTION_POLICIES`: JSON object with per-type policies
+ * - `MIMIR_DATA_RETENTION_AUDIT_DAYS`: Audit log retention (0 = forever)
+ * - `MIMIR_DATA_RETENTION_INTERVAL_MS`: Cleanup interval in ms (default: 24h)
+ * 
+ * @returns Data retention configuration object
+ * 
+ * @example
+ * ```ts
+ * // Enable retention with 30-day default
+ * process.env.MIMIR_DATA_RETENTION_ENABLED = 'true';
+ * process.env.MIMIR_DATA_RETENTION_DEFAULT_DAYS = '30';
+ * 
+ * // Custom policies per node type
+ * process.env.MIMIR_DATA_RETENTION_POLICIES = JSON.stringify({
+ *   'Session': 7,      // Delete sessions after 7 days
+ *   'TempFile': 1,     // Delete temp files after 1 day
+ *   'Project': 0       // Keep projects forever
+ * });
+ * 
+ * const config = loadDataRetentionConfig();
+ * console.log(config.defaultDays); // 30
+ * ```
  */
 export function loadDataRetentionConfig(): DataRetentionConfig {
   const enabled = process.env.MIMIR_DATA_RETENTION_ENABLED === 'true';
@@ -51,8 +80,37 @@ function getRetentionDays(nodeType: string, config: DataRetentionConfig): number
 }
 
 /**
- * Run data retention cleanup
- * Deletes nodes older than their retention policy
+ * Run data retention cleanup to delete expired nodes
+ * 
+ * Scans all node types in the database and deletes nodes that exceed
+ * their retention period. Uses `createdAt` timestamp to determine age.
+ * 
+ * **Process:**
+ * 1. Discover all node types (labels) in database
+ * 2. For each type, check retention policy
+ * 3. Delete nodes older than retention period
+ * 4. Log deletion statistics
+ * 
+ * Nodes without a `createdAt` property are not deleted (assumed permanent).
+ * 
+ * @param driver - Neo4j driver instance
+ * @param config - Data retention configuration
+ * @returns Promise that resolves when cleanup is complete
+ * 
+ * @example
+ * ```ts
+ * const driver = neo4j.driver('bolt://localhost:7687');
+ * const config = loadDataRetentionConfig();
+ * 
+ * // Run cleanup manually
+ * await runDataRetentionCleanup(driver, config);
+ * // Output: [Data Retention] Deleted 15 Session nodes older than 7 days
+ * 
+ * // Cleanup respects per-type policies
+ * // Session nodes: 7 days
+ * // TempFile nodes: 1 day
+ * // Project nodes: forever (0 days = never deleted)
+ * ```
  */
 export async function runDataRetentionCleanup(driver: Driver, config: DataRetentionConfig): Promise<void> {
   if (!config.enabled) {
@@ -124,7 +182,34 @@ export async function runDataRetentionCleanup(driver: Driver, config: DataRetent
 }
 
 /**
- * Start data retention cleanup scheduler
+ * Start automatic data retention cleanup scheduler
+ * 
+ * Runs cleanup immediately on start, then schedules recurring cleanup
+ * at the configured interval. Returns a timer that can be stopped later.
+ * 
+ * If retention is disabled, returns null and does nothing.
+ * 
+ * @param driver - Neo4j driver instance
+ * @param config - Data retention configuration
+ * @returns Timer handle for stopping scheduler, or null if disabled
+ * 
+ * @example
+ * ```ts
+ * const driver = neo4j.driver('bolt://localhost:7687');
+ * const config = loadDataRetentionConfig();
+ * 
+ * // Start scheduler (runs every 24 hours by default)
+ * const timer = startDataRetentionScheduler(driver, config);
+ * // Output: [Data Retention] Scheduler started
+ * //         Default retention: 30 days
+ * //         Run interval: 1440 minutes
+ * 
+ * // Stop scheduler on shutdown
+ * process.on('SIGTERM', () => {
+ *   stopDataRetentionScheduler(timer);
+ *   driver.close();
+ * });
+ * ```
  */
 export function startDataRetentionScheduler(driver: Driver, config: DataRetentionConfig): NodeJS.Timeout | null {
   if (!config.enabled) {
@@ -153,7 +238,21 @@ export function startDataRetentionScheduler(driver: Driver, config: DataRetentio
 }
 
 /**
- * Stop data retention scheduler
+ * Stop the data retention cleanup scheduler
+ * 
+ * Clears the interval timer to stop automatic cleanup.
+ * Safe to call with null timer (no-op).
+ * 
+ * @param timer - Timer handle from startDataRetentionScheduler()
+ * 
+ * @example
+ * ```ts
+ * const timer = startDataRetentionScheduler(driver, config);
+ * 
+ * // Later, stop the scheduler
+ * stopDataRetentionScheduler(timer);
+ * // Output: [Data Retention] Scheduler stopped
+ * ```
  */
 export function stopDataRetentionScheduler(timer: NodeJS.Timeout | null): void {
   if (timer) {

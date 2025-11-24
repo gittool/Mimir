@@ -71,7 +71,9 @@
     "webui:setup": "docker exec -it mimir-open-webui pip install neo4j",
     "webui:build": "docker-compose build open-webui && docker-compose up -d --no-deps open-webui",
     "test:oauth": "tsx testing/test-oauth-flow.ts",
-    "oauth:provider": "tsx testing/local-oauth-provider.ts"
+    "oauth:provider": "tsx testing/local-oauth-provider.ts",
+    "license:check": "npx license-checker --production --onlyAllow 'MIT;ISC;Apache-2.0;BSD-2-Clause;BSD-3-Clause;0BSD;BlueOak-1.0.0;LGPL-3.0-or-later;Python-2.0;(MIT OR GPL-3.0-or-later);(MIT AND Zlib)' --excludePackages 'duck@0.1.12;pause@0.0.1'",
+    "license:audit": "npx license-checker --json --production --excludePrivatePackages > license-audit-raw.json && echo '✅ License audit complete - see LICENSE_AUDIT_REPORT.md'"
   },
   "author": "",
   "license": "MIT",

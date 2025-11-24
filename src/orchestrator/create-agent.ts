@@ -25,7 +25,20 @@ interface AgentRequest {
 }
 
 /**
- * Clean LLM output - remove markdown code blocks and extra whitespace
+ * Clean LLM output by removing markdown code blocks and extra whitespace
+ * 
+ * LLMs sometimes wrap their output in markdown code blocks (```markdown...```).
+ * This function strips those wrappers to get the raw content.
+ * 
+ * @param output - Raw output from LLM that may contain markdown wrappers
+ * @returns Cleaned output with code blocks and extra whitespace removed
+ * 
+ * @example
+ * ```ts
+ * const raw = '```markdown\n# Title\nContent\n```';
+ * const clean = cleanLLMOutput(raw);
+ * // Returns: '# Title\nContent'
+ * ```
  */
 function cleanLLMOutput(output: string): string {
   let cleaned = output.trim();
@@ -40,12 +53,54 @@ function cleanLLMOutput(output: string): string {
   return cleaned;
 }
 
+/**
+ * Create a new agent preamble using the Agentinator system
+ * 
+ * This function orchestrates the agent creation process:
+ * 1. Loads the appropriate template (Worker or QC)
+ * 2. Initializes the Agentinator agent
+ * 3. Generates a customized preamble based on role description
+ * 4. Saves the preamble to a hashed filename for caching
+ * 
+ * The generated agent follows strict template structure preservation rules
+ * to ensure consistency across all generated agents.
+ * 
+ * @param roleDescription - Natural language description of the agent's role
+ *   Example: "senior golang developer with cryptography expertise"
+ * @param outputDir - Directory to save generated agent preambles (default: 'generated-agents')
+ * @param model - LLM model to use for generation (default: from MIMIR_DEFAULT_MODEL env)
+ * @param taskExample - Optional task object to provide context for generation
+ * @param isQC - Whether to generate a QC agent (true) or Worker agent (false)
+ * 
+ * @returns Path to the generated agent preamble file
+ * 
+ * @example
+ * ```ts
+ * // Create a worker agent
+ * const agentPath = await createAgent(
+ *   'senior golang developer',
+ *   'generated-agents',
+ *   'gpt-4.1'
+ * );
+ * console.log(`Agent saved to: ${agentPath}`);
+ * // Output: Agent saved to: generated-agents/worker-a3f2b8c1.md
+ * 
+ * // Create a QC agent with task context
+ * const qcPath = await createAgent(
+ *   'security auditor',
+ *   'generated-agents',
+ *   'gpt-4.1',
+ *   { id: 't1', title: 'Audit auth system', prompt: '...' },
+ *   true
+ * );
+ * ```
+ */
 export async function createAgent(
   roleDescription: string,
   outputDir: string = 'generated-agents',
   model: string = process.env.MIMIR_DEFAULT_MODEL || 'gpt-4.1',
-  taskExample?: any, // Optional: first task using this role for context
-  isQC: boolean = false // Whether this is a QC agent (affects hash prefix)
+  taskExample?: any,
+  isQC: boolean = false
 ): Promise<string> {
   console.log(`\n🤖 Creating ${isQC ? 'QC' : 'Worker'} Agent for role: ${roleDescription}\n`);
   
