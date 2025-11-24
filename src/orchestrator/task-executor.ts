@@ -146,19 +146,68 @@ export interface ExecutionResult {
  * Organize tasks into parallel execution batches based on dependencies
  * 
  * Analyzes task dependencies and creates execution batches where tasks
- * with satisfied dependencies can run in parallel.
+ * with satisfied dependencies can run in parallel. Supports explicit
+ * parallel groups for fine-grained control over concurrent execution.
+ * 
+ * **Features**:
+ * - Automatic dependency resolution
+ * - Parallel execution of independent tasks
+ * - Explicit parallel groups via `parallelGroup` property
+ * - Circular dependency detection
  * 
  * @param tasks - Array of task definitions with dependencies
  * @returns Array of task batches for parallel execution
+ * @throws {Error} If circular dependencies or invalid task graph detected
  * 
  * @example
+ * // Simple parallel execution - independent tasks run together
  * const tasks = [
- *   { id: 't1', dependencies: [] },
- *   { id: 't2', dependencies: [] },
- *   { id: 't3', dependencies: ['t1', 't2'] }
+ *   { id: 't1', dependencies: [], title: 'Setup database' },
+ *   { id: 't2', dependencies: [], title: 'Setup API' },
+ *   { id: 't3', dependencies: ['t1', 't2'], title: 'Run tests' }
  * ];
  * const batches = organizeTasks(tasks);
- * // Returns: [[t1, t2], [t3]] - t1 and t2 run in parallel, then t3
+ * // Returns: [[t1, t2], [t3]]
+ * // Batch 1: t1 and t2 run in parallel
+ * // Batch 2: t3 runs after both complete
+ * 
+ * @example
+ * // Sequential execution - each task depends on previous
+ * const tasks = [
+ *   { id: 't1', dependencies: [], title: 'Build' },
+ *   { id: 't2', dependencies: ['t1'], title: 'Test' },
+ *   { id: 't3', dependencies: ['t2'], title: 'Deploy' }
+ * ];
+ * const batches = organizeTasks(tasks);
+ * // Returns: [[t1], [t2], [t3]]
+ * // Each task runs sequentially
+ * 
+ * @example
+ * // Explicit parallel groups - PM controls parallelism
+ * const tasks = [
+ *   { id: 't1', dependencies: [], parallelGroup: 1, title: 'Frontend' },
+ *   { id: 't2', dependencies: [], parallelGroup: 1, title: 'Backend' },
+ *   { id: 't3', dependencies: [], parallelGroup: 2, title: 'Database' },
+ *   { id: 't4', dependencies: ['t1', 't2', 't3'], title: 'Integration' }
+ * ];
+ * const batches = organizeTasks(tasks);
+ * // Returns: [[t1, t2], [t3], [t4]]
+ * // Group 1: t1 and t2 run together
+ * // Group 2: t3 runs separately
+ * // t4 runs after all complete
+ * 
+ * @example
+ * // Error handling - circular dependency
+ * const tasks = [
+ *   { id: 't1', dependencies: ['t2'] },
+ *   { id: 't2', dependencies: ['t1'] }
+ * ];
+ * try {
+ *   organizeTasks(tasks);
+ * } catch (error) {
+ *   console.error('Circular dependency:', error.message);
+ *   // Error: Cannot resolve dependencies for tasks: t1, t2
+ * }
  */
 export function organizeTasks(tasks: TaskDefinition[]): TaskDefinition[][] {
   const batches: TaskDefinition[][] = [];
@@ -234,15 +283,104 @@ export function organizeTasks(tasks: TaskDefinition[]): TaskDefinition[][] {
 /**
  * Parse chain output markdown into task definitions
  * 
- * Extracts structured task information from PM-generated markdown.
+ * Extracts structured task information from PM-generated markdown with
+ * flexible field matching to handle variations in PM output format.
  * 
- * @param markdown - Chain output markdown content
- * @returns Array of parsed task definitions
+ * **Supported Fields**:
+ * - **Task ID**: Required, format `task-N.M`
+ * - **Agent Role Description**: Worker agent role (with aliases)
+ * - **Recommended Model**: LLM model suggestion (optional)
+ * - **Optimized Prompt**: Task instructions (supports `<details>` and `<prompt>` tags)
+ * - **Dependencies**: Task IDs this task depends on
+ * - **Estimated Duration**: Time estimate (optional)
+ * - **QC Agent Role**: QC verification role (optional)
+ * - **Verification Criteria**: Success criteria for QC (optional)
+ * - **Max Retries**: Retry limit (default: 2)
+ * - **Estimated Tool Calls**: For circuit breaker (optional)
+ * - **Parallel Group**: Group ID for parallel execution (optional)
+ * 
+ * **Flexible Parsing**:
+ * - Case-insensitive field names
+ * - Multiple aliases per field (e.g., "Agent Role" or "Worker Role")
+ * - Handles `<details>` collapsible sections
+ * - Extracts from `<prompt>` XML tags
+ * - Deduplicates dependencies
+ * - Removes self-references
+ * 
+ * @param markdown - Chain output markdown content from PM agent
+ * @returns Array of parsed task definitions ready for execution
  * 
  * @example
+ * // Parse PM output from file
  * const markdown = await fs.readFile('chain-output.md', 'utf-8');
  * const tasks = parseChainOutput(markdown);
- * console.log('Parsed', tasks.length, 'tasks');
+ * console.log(`Parsed ${tasks.length} tasks`);
+ * 
+ * tasks.forEach(task => {
+ *   console.log(`Task ${task.id}:`);
+ *   console.log(`  Role: ${task.agentRoleDescription}`);
+ *   console.log(`  Dependencies: ${task.dependencies.join(', ') || 'none'}`);
+ *   console.log(`  QC: ${task.qcRole ? 'enabled' : 'disabled'}`);
+ * });
+ * 
+ * @example
+ * // Standard PM output format
+ * const markdown = `
+ * **Task ID:** task-1.1
+ * **Agent Role Description**
+ * Senior Backend Developer
+ * **Recommended Model**
+ * ollama/qwen2.5-coder:32b
+ * **Optimized Prompt**
+ * <details>
+ * <summary>Click to expand</summary>
+ * <prompt>
+ * Implement user authentication with JWT tokens.
+ * </prompt>
+ * </details>
+ * **Dependencies**
+ * None
+ * **Estimated Duration**
+ * 2 hours
+ * **QC Agent Role**
+ * Security Auditor
+ * **Verification Criteria**
+ * - JWT tokens properly signed
+ * - Refresh token rotation implemented
+ * - Password hashing uses bcrypt
+ * **Max Retries**
+ * 3
+ * `;
+ * 
+ * const tasks = parseChainOutput(markdown);
+ * console.log(tasks[0].id); // 'task-1.1'
+ * console.log(tasks[0].agentRoleDescription); // 'Senior Backend Developer'
+ * console.log(tasks[0].maxRetries); // 3
+ * 
+ * @example
+ * // With dependencies and parallel groups
+ * const markdown = `
+ * **Task ID:** task-1.1
+ * **Agent Role Description:** Frontend Developer
+ * **Parallel Group:** 1
+ * **Dependencies:** None
+ * 
+ * **Task ID:** task-1.2
+ * **Agent Role Description:** Backend Developer  
+ * **Parallel Group:** 1
+ * **Dependencies:** None
+ * 
+ * **Task ID:** task-2.1
+ * **Agent Role Description:** Integration Tester
+ * **Dependencies:** task-1.1, task-1.2
+ * `;
+ * 
+ * const tasks = parseChainOutput(markdown);
+ * // task-1.1 and task-1.2 can run in parallel (same group)
+ * // task-2.1 waits for both to complete
+ * console.log(tasks[0].parallelGroup); // 1
+ * console.log(tasks[1].parallelGroup); // 1
+ * console.log(tasks[2].dependencies); // ['task-1.1', 'task-1.2']
  */
 export function parseChainOutput(markdown: string): TaskDefinition[] {
   const tasks: TaskDefinition[] = [];

@@ -103,6 +103,18 @@ export class ConversationHistoryManager {
 
   /**
    * Create Neo4j indexes for conversation messages
+   * 
+   * Sets up vector index for semantic search and standard indexes
+   * for efficient timestamp-based queries. Called automatically
+   * during initialization.
+   * 
+   * **Indexes Created**:
+   * - Vector index: `conversation_message_embedding_index` (768 dimensions, cosine similarity)
+   * - Session index: `conversation_session_idx` (sessionId + timestamp)
+   * - Timestamp index: `conversation_timestamp_idx`
+   * 
+   * @private
+   * @returns Promise that resolves when indexes are created
    */
   private async createIndexes(): Promise<void> {
     const session = this.driver.session();
@@ -157,6 +169,43 @@ export class ConversationHistoryManager {
 
   /**
    * Store a message in the conversation history
+   * 
+   * Saves a conversation message to Neo4j with automatic embedding
+   * generation if the embeddings service is enabled and content
+   * is substantial (>10 characters).
+   * 
+   * @param sessionId - Unique session identifier
+   * @param role - Message role (system/user/assistant/tool)
+   * @param content - Message content text
+   * @param metadata - Optional metadata object
+   * 
+   * @returns Promise resolving to generated message ID
+   * 
+   * @example
+   * // Store user message
+   * const msgId = await manager.storeMessage(
+   *   'session-123',
+   *   'user',
+   *   'How do I configure Docker volumes?'
+   * );
+   * console.log('Stored message:', msgId);
+   * 
+   * @example
+   * // Store assistant response with metadata
+   * await manager.storeMessage(
+   *   'session-123',
+   *   'assistant',
+   *   'To configure Docker volumes...',
+   *   { model: 'gpt-4', tokens: 150 }
+   * );
+   * 
+   * @example
+   * // Store system message
+   * await manager.storeMessage(
+   *   'session-123',
+   *   'system',
+   *   'You are a helpful Docker expert'
+   * );
    */
   async storeMessage(
     sessionId: string,
@@ -211,6 +260,26 @@ export class ConversationHistoryManager {
 
   /**
    * Get recent N messages from a session
+   * 
+   * Retrieves the most recent messages from a conversation session
+   * in chronological order. Used to maintain conversation context.
+   * 
+   * @param sessionId - Session identifier
+   * @param count - Number of recent messages to retrieve (default: 10)
+   * 
+   * @returns Promise resolving to array of messages in chronological order
+   * 
+   * @example
+   * // Get last 5 messages
+   * const recent = await manager.getRecentMessages('session-123', 5);
+   * recent.forEach(msg => {
+   *   console.log(`${msg.role}: ${msg.content}`);
+   * });
+   * 
+   * @example
+   * // Get default 10 recent messages
+   * const messages = await manager.getRecentMessages('session-456');
+   * console.log(`Retrieved ${messages.length} recent messages`);
    */
   async getRecentMessages(sessionId: string, count: number = 10): Promise<ConversationMessage[]> {
     await this.initialize();
@@ -239,6 +308,43 @@ export class ConversationHistoryManager {
 
   /**
    * Retrieve semantically relevant messages for a new query
+   * 
+   * Uses vector similarity search to find past messages that are
+   * semantically related to the current query. Excludes recent messages
+   * to avoid duplication with getRecentMessages().
+   * 
+   * **Requires**: Embeddings service must be enabled
+   * 
+   * @param sessionId - Session identifier
+   * @param query - Current query text to find relevant context for
+   * @param count - Max number of relevant messages to retrieve (default: 10)
+   * @param minSimilarity - Minimum similarity score threshold (default: 0.70)
+   * @param excludeRecentCount - Number of recent messages to exclude (default: 5)
+   * 
+   * @returns Promise resolving to array of relevant messages with similarity scores
+   * 
+   * @example
+   * // Find relevant past messages for current query
+   * const relevant = await manager.retrieveRelevantMessages(
+   *   'session-123',
+   *   'How do I troubleshoot Docker networking?',
+   *   10,
+   *   0.75
+   * );
+   * 
+   * relevant.forEach(msg => {
+   *   console.log(`Similarity: ${msg.similarity.toFixed(2)}`);
+   *   console.log(`${msg.role}: ${msg.content.substring(0, 100)}...`);
+   * });
+   * 
+   * @example
+   * // Get highly relevant messages only
+   * const highlyRelevant = await manager.retrieveRelevantMessages(
+   *   'session-456',
+   *   'authentication errors',
+   *   5,
+   *   0.85  // Higher threshold
+   * );
    */
   async retrieveRelevantMessages(
     sessionId: string,
@@ -312,7 +418,51 @@ export class ConversationHistoryManager {
 
   /**
    * Build complete conversation context for agent execution
-   * Combines: system message + retrieved relevant context + recent messages + new query
+   * 
+   * Assembles a complete conversation context by combining:
+   * 1. System prompt
+   * 2. Semantically relevant past messages (if embeddings enabled)
+   * 3. Recent conversation messages
+   * 4. New user query
+   * 
+   * This implements the "Option 4" advanced retrieval strategy for
+   * maintaining long conversation context without token overflow.
+   * 
+   * @param sessionId - Session identifier
+   * @param systemPrompt - System prompt/instructions
+   * @param newQuery - New user query
+   * @param options - Optional configuration
+   * @param options.recentCount - Number of recent messages (default: 5)
+   * @param options.retrievedCount - Number of relevant messages (default: 10)
+   * @param options.minSimilarity - Similarity threshold (default: 0.70)
+   * 
+   * @returns Promise resolving to array of LangChain BaseMessage objects
+   * 
+   * @example
+   * // Build context for agent execution
+   * const messages = await manager.buildConversationContext(
+   *   'session-123',
+   *   'You are a helpful Docker expert',
+   *   'How do I configure volumes?'
+   * );
+   * 
+   * // Use with LangChain agent
+   * const response = await agent.invoke({ messages });
+   * 
+   * @example
+   * // Custom retrieval settings
+   * const messages = await manager.buildConversationContext(
+   *   'session-456',
+   *   'You are a security consultant',
+   *   'Explain OAuth flow',
+   *   {
+   *     recentCount: 3,
+   *     retrievedCount: 15,
+   *     minSimilarity: 0.80
+   *   }
+   * );
+   * 
+   * console.log(`Context includes ${messages.length} messages`);
    */
   async buildConversationContext(
     sessionId: string,
@@ -375,6 +525,36 @@ export class ConversationHistoryManager {
 
   /**
    * Store complete conversation turn (user message + agent response)
+   * 
+   * Convenience method to store both user message and assistant response
+   * in a single call. Generates embeddings for both messages if enabled.
+   * 
+   * @param sessionId - Session identifier
+   * @param userMessage - User's message text
+   * @param assistantResponse - Assistant's response text
+   * @param metadata - Optional metadata for both messages
+   * 
+   * @returns Promise resolving to object with both message IDs
+   * 
+   * @example
+   * // Store complete Q&A turn
+   * const { userMessageId, assistantMessageId } = 
+   *   await manager.storeConversationTurn(
+   *     'session-123',
+   *     'How do I use Docker Compose?',
+   *     'Docker Compose is a tool for defining...'
+   *   );
+   * 
+   * console.log('Stored turn:', userMessageId, assistantMessageId);
+   * 
+   * @example
+   * // Store with metadata
+   * await manager.storeConversationTurn(
+   *   'session-456',
+   *   'Explain OAuth',
+   *   'OAuth is an authorization framework...',
+   *   { model: 'gpt-4', duration_ms: 1250 }
+   * );
    */
   async storeConversationTurn(
     sessionId: string,
@@ -390,6 +570,27 @@ export class ConversationHistoryManager {
 
   /**
    * Delete all messages for a session
+   * 
+   * Permanently removes all conversation messages for the specified
+   * session from the database. Useful for privacy compliance or
+   * resetting conversations.
+   * 
+   * @param sessionId - Session identifier to clear
+   * 
+   * @returns Promise resolving to number of messages deleted
+   * 
+   * @example
+   * // Clear session after completion
+   * const deletedCount = await manager.clearSession('session-123');
+   * console.log(`Deleted ${deletedCount} messages`);
+   * 
+   * @example
+   * // Clear multiple sessions
+   * const sessions = ['session-1', 'session-2', 'session-3'];
+   * for (const sessionId of sessions) {
+   *   const count = await manager.clearSession(sessionId);
+   *   console.log(`Cleared ${count} messages from ${sessionId}`);
+   * }
    */
   async clearSession(sessionId: string): Promise<number> {
     await this.initialize();
@@ -414,6 +615,35 @@ export class ConversationHistoryManager {
 
   /**
    * Get conversation statistics for a session
+   * 
+   * Returns comprehensive statistics about a conversation session
+   * including message counts, role distribution, and time range.
+   * 
+   * @param sessionId - Session identifier
+   * 
+   * @returns Promise resolving to statistics object
+   * 
+   * @example
+   * // Get session statistics
+   * const stats = await manager.getSessionStats('session-123');
+   * console.log(`Total messages: ${stats.totalMessages}`);
+   * console.log(`User messages: ${stats.userMessages}`);
+   * console.log(`Assistant messages: ${stats.assistantMessages}`);
+   * console.log(`Embedded: ${stats.embeddedMessages}`);
+   * 
+   * @example
+   * // Check session age
+   * const stats = await manager.getSessionStats('session-456');
+   * if (stats.oldestMessage) {
+   *   const ageHours = (Date.now() - stats.oldestMessage) / (1000 * 60 * 60);
+   *   console.log(`Session age: ${ageHours.toFixed(1)} hours`);
+   * }
+   * 
+   * @example
+   * // Monitor embedding coverage
+   * const stats = await manager.getSessionStats('session-789');
+   * const coverage = (stats.embeddedMessages / stats.totalMessages) * 100;
+   * console.log(`Embedding coverage: ${coverage.toFixed(1)}%`);
    */
   async getSessionStats(sessionId: string): Promise<{
     totalMessages: number;

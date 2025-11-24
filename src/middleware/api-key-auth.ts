@@ -11,8 +11,68 @@ const OAUTH_USERINFO_URL = process.env.MIMIR_OAUTH_USERINFO_URL;
 // Legacy helper functions removed - no longer needed with JWT stateless auth
 
 /**
- * Middleware to authenticate requests using JWT tokens
- * Validates JWT signature and expiration (stateless, no database lookup)
+ * Express middleware for stateless JWT and OAuth token authentication
+ * 
+ * Validates authentication tokens from multiple sources with automatic fallback:
+ * 1. **Authorization: Bearer** header (OAuth 2.0 RFC 6750 compliant)
+ * 2. **X-API-Key** header (common alternative)
+ * 3. **HTTP-only cookie** (for browser UI)
+ * 4. **Query parameters** (for SSE/EventSource which can't send headers)
+ * 
+ * **Token Validation Strategy**:
+ * - First attempts JWT validation (Mimir-issued tokens)
+ * - Falls back to OAuth provider validation if JWT fails
+ * - Stateless: No database lookups required
+ * 
+ * **Security Features**:
+ * - Token format validation (prevents SSRF/injection)
+ * - Userinfo URL validation (prevents SSRF attacks)
+ * - Configurable timeout for OAuth validation
+ * - Multiple token sources for flexibility
+ * 
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ * 
+ * @example
+ * // Basic usage - protect all routes
+ * import { apiKeyAuth } from './middleware/api-key-auth.js';
+ * 
+ * app.use(apiKeyAuth);
+ * app.use('/api', apiRouter);
+ * 
+ * @example
+ * // Protect specific routes
+ * router.get('/api/nodes',
+ *   apiKeyAuth,
+ *   async (req, res) => {
+ *     // req.user is populated with { id, email, roles }
+ *     console.log('Authenticated user:', req.user.email);
+ *     res.json({ nodes: [] });
+ *   }
+ * );
+ * 
+ * @example
+ * // Client usage - Authorization header
+ * fetch('/api/nodes', {
+ *   headers: {
+ *     'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIs...'
+ *   }
+ * });
+ * 
+ * @example
+ * // Client usage - X-API-Key header
+ * fetch('/api/nodes', {
+ *   headers: {
+ *     'X-API-Key': 'eyJhbGciOiJIUzI1NiIs...'
+ *   }
+ * });
+ * 
+ * @example
+ * // SSE/EventSource usage - query parameter
+ * const eventSource = new EventSource(
+ *   '/api/stream?access_token=eyJhbGciOiJIUzI1NiIs...'
+ * );
  */
 export async function apiKeyAuth(req: Request, res: Response, next: NextFunction) {
   // OAuth 2.0 RFC 6750 compliant: Check Authorization: Bearer header first

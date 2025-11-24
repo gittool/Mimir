@@ -1,10 +1,48 @@
 /**
  * Extract claims from user object using dot notation path
- * Supports nested paths like "custom.roles" or "app_metadata.permissions"
+ * 
+ * Supports nested paths and handles various claim formats from different
+ * identity providers. Automatically converts non-string values and extracts
+ * from common object patterns.
+ * 
+ * **Supported Formats**:
+ * - Arrays of strings: `["admin", "user"]`
+ * - Single string: `"admin"`
+ * - Numbers/booleans: Converted to strings with warning
+ * - Objects: Extracts `name`, `value`, or `id` fields
+ * 
+ * **Nested Paths**: Use dot notation for nested claims:
+ * - `"roles"` → `user.roles`
+ * - `"custom.roles"` → `user.custom.roles`
+ * - `"app_metadata.permissions"` → `user.app_metadata.permissions`
  * 
  * @param user - User object from Passport (typically contains JWT claims)
- * @param claimPath - Dot-separated path to claims (e.g., "roles", "groups", "custom.permissions")
- * @returns Array of claim values (roles/groups)
+ * @param claimPath - Dot-separated path to claims
+ * 
+ * @returns Array of claim values as strings
+ * 
+ * @example
+ * // Simple array of roles
+ * const user = { roles: ['admin', 'editor'] };
+ * const claims = extractClaims(user, 'roles');
+ * console.log(claims); // ['admin', 'editor']
+ * 
+ * @example
+ * // Nested path
+ * const user = { custom: { permissions: ['read', 'write'] } };
+ * const claims = extractClaims(user, 'custom.permissions');
+ * console.log(claims); // ['read', 'write']
+ * 
+ * @example
+ * // Object array with name field
+ * const user = {
+ *   groups: [
+ *     { name: 'developers', id: 123 },
+ *     { name: 'admins', id: 456 }
+ *   ]
+ * };
+ * const claims = extractClaims(user, 'groups');
+ * console.log(claims); // ['developers', 'admins']
  */
 export function extractClaims(user: any, claimPath: string): string[] {
   if (!user) {
@@ -137,10 +175,33 @@ export function extractClaims(user: any, claimPath: string): string[] {
 /**
  * Extract roles from user and add default role if none found
  * 
+ * Convenience wrapper around extractClaims() that provides a fallback
+ * default role when no roles are found in the user object. Useful for
+ * ensuring all users have at least one role for RBAC.
+ * 
  * @param user - User object from Passport
- * @param claimPath - Path to roles in user object
+ * @param claimPath - Path to roles in user object (dot notation)
  * @param defaultRole - Default role to assign if no roles found
- * @returns Array of roles (including default if applicable)
+ * 
+ * @returns Array of roles (includes default if no roles extracted)
+ * 
+ * @example
+ * // User with roles
+ * const user = { roles: ['admin'] };
+ * const roles = extractRolesWithDefault(user, 'roles', 'viewer');
+ * console.log(roles); // ['admin']
+ * 
+ * @example
+ * // User without roles - gets default
+ * const user = { email: 'user@example.com' };
+ * const roles = extractRolesWithDefault(user, 'roles', 'viewer');
+ * console.log(roles); // ['viewer']
+ * 
+ * @example
+ * // No default role specified
+ * const user = {};
+ * const roles = extractRolesWithDefault(user, 'roles');
+ * console.log(roles); // []
  */
 export function extractRolesWithDefault(
   user: any,

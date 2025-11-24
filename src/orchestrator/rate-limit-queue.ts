@@ -57,6 +57,35 @@ export class RateLimitQueue {
     this.updateDerivedValues();
   }
   
+  /**
+   * Get or create a singleton RateLimitQueue instance
+   * 
+   * Supports multiple named instances for different providers/services.
+   * If instance exists and config is provided, updates the configuration.
+   * 
+   * @param config - Optional configuration to apply
+   * @param instanceKey - Instance identifier (default: 'default')
+   * 
+   * @returns RateLimitQueue instance
+   * 
+   * @example
+   * // Get default instance
+   * const limiter = RateLimitQueue.getInstance();
+   * 
+   * @example
+   * // Create provider-specific instance
+   * const openaiLimiter = RateLimitQueue.getInstance(
+   *   { requestsPerHour: 10000 },
+   *   'openai'
+   * );
+   * 
+   * @example
+   * // Update existing instance config
+   * const limiter = RateLimitQueue.getInstance(
+   *   { requestsPerHour: 5000, logLevel: 'verbose' },
+   *   'default'
+   * );
+   */
   static getInstance(config?: Partial<RateLimitConfig>, instanceKey: string = 'default'): RateLimitQueue {
     if (!RateLimitQueue.instances.has(instanceKey)) {
       RateLimitQueue.instances.set(instanceKey, new RateLimitQueue(config));
@@ -98,7 +127,24 @@ export class RateLimitQueue {
   }
   
   /**
-   * Update requestsPerHour dynamically
+   * Update requestsPerHour dynamically at runtime
+   * 
+   * Useful for adjusting rate limits based on API tier changes
+   * or quota updates without restarting the application.
+   * 
+   * @param newLimit - New requests per hour limit (-1 to bypass)
+   * 
+   * @example
+   * // Increase limit after tier upgrade
+   * limiter.setRequestsPerHour(10000);
+   * 
+   * @example
+   * // Disable rate limiting
+   * limiter.setRequestsPerHour(-1);
+   * 
+   * @example
+   * // Reduce limit during high load
+   * limiter.setRequestsPerHour(1000);
    */
   public setRequestsPerHour(newLimit: number): void {
     this.config.requestsPerHour = newLimit;
@@ -108,11 +154,38 @@ export class RateLimitQueue {
   /**
    * Enqueue a request for rate-limited execution
    * 
-   * @param execute - Function that makes the LLM API call
-   * @param estimatedRequests - How many API calls this will make (default: 1)
-   * @returns Promise that resolves when request completes
+   * Queues the request and processes it when rate limit capacity is available.
+   * Automatically handles timing, throttling, and queue management.
    * 
-   * Note: If requestsPerHour is set to -1, rate limiting is bypassed entirely.
+   * **Bypass Mode**: If `requestsPerHour` is -1, executes immediately without queuing.
+   * 
+   * @param execute - Async function that makes the API call
+   * @param estimatedRequests - Number of API calls this will make (default: 1)
+   * 
+   * @returns Promise that resolves with the result of execute()
+   * 
+   * @example
+   * // Simple LLM call
+   * const response = await limiter.enqueue(async () => {
+   *   return await llm.invoke([new HumanMessage('Hello')]);
+   * });
+   * 
+   * @example
+   * // Agent execution with multiple calls
+   * const result = await limiter.enqueue(async () => {
+   *   return await agent.invoke({ messages });
+   * }, 5);  // Estimated 5 API calls
+   * 
+   * @example
+   * // With error handling
+   * try {
+   *   const data = await limiter.enqueue(async () => {
+   *     return await fetchUserData();
+   *   });
+   *   console.log('Data:', data);
+   * } catch (error) {
+   *   console.error('Rate-limited request failed:', error);
+   * }
    */
   public async enqueue<T>(
     execute: () => Promise<T>,

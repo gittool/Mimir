@@ -146,8 +146,33 @@ router.get('/vector-search', requirePermission('search:execute'), async (req: Re
 });
 
 /**
- * GET /api/nodes/types/:type
- * Get paginated list of nodes of a specific type
+ * GET /api/nodes/types/:type - Get paginated list of nodes by type
+ * 
+ * Returns a paginated list of all nodes matching the specified type.
+ * Includes edge counts, embedding counts, and full node properties.
+ * 
+ * @param type - Node type to filter by
+ * @param page - Page number (default: 1)
+ * @param limit - Results per page (default: 20)
+ * 
+ * @returns JSON with nodes array and pagination metadata
+ * 
+ * @example
+ * // Get first page of todo nodes
+ * fetch('/api/nodes/types/todo?page=1&limit=20')
+ *   .then(r => r.json())
+ *   .then(data => {
+ *     console.log(`Found ${data.pagination.total} todos`);
+ *     data.nodes.forEach(node => console.log(node.displayName));
+ *   });
+ * 
+ * @example
+ * // Get concept nodes with custom pagination
+ * fetch('/api/nodes/types/concept?page=2&limit=50')
+ *   .then(r => r.json())
+ *   .then(data => {
+ *     console.log(`Page ${data.pagination.page} of ${data.pagination.totalPages}`);
+ *   });
  */
 router.get('/types/:type', requirePermission('nodes:read'), async (req: Request, res: Response) => {
   const { type } = req.params;
@@ -243,8 +268,38 @@ router.get('/types/:type', requirePermission('nodes:read'), async (req: Request,
 });
 
 /**
- * GET /api/nodes/types/:type/:id/details
- * Get detailed information about a specific node including edges
+ * GET /api/nodes/types/:type/:id/details - Get detailed node information
+ * 
+ * Returns comprehensive information about a specific node including:
+ * - All node properties
+ * - Outgoing relationships (edges to other nodes)
+ * - Incoming relationships (edges from other nodes)
+ * - Related node metadata
+ * 
+ * @param type - Node type
+ * @param id - Node ID
+ * 
+ * @returns JSON with node properties, outgoing edges, and incoming edges
+ * 
+ * @example
+ * // Get details for a specific todo node
+ * fetch('/api/nodes/types/todo/todo-123/details')
+ *   .then(r => r.json())
+ *   .then(data => {
+ *     console.log('Properties:', data.properties);
+ *     console.log('Linked to:', data.outgoing.length, 'nodes');
+ *     console.log('Referenced by:', data.incoming.length, 'nodes');
+ *   });
+ * 
+ * @example
+ * // Explore relationships for a concept node
+ * fetch('/api/nodes/types/concept/auth-concept/details')
+ *   .then(r => r.json())
+ *   .then(data => {
+ *     data.outgoing.forEach(edge => {
+ *       console.log(`${edge.type} -> ${edge.targetName}`);
+ *     });
+ *   });
  */
 router.get('/types/:type/:id/details', requirePermission('nodes:read'), async (req: Request, res: Response) => {
   const { type, id } = req.params;
@@ -427,8 +482,63 @@ router.delete('/:id', requirePermission('nodes:delete'), async (req: Request, re
 });
 
 /**
- * POST /api/nodes/:id/embeddings
- * Generate or regenerate embeddings for a specific node
+ * POST /api/nodes/:id/embeddings - Generate vector embeddings for a node
+ * 
+ * Generates semantic vector embeddings for a node's text content.
+ * Automatically handles chunking for large content (>768 chars by default).
+ * 
+ * **Content Sources** (in priority order):
+ * 1. `content` property
+ * 2. `text` property
+ * 3. `title` property
+ * 4. `description` property
+ * 
+ * **Chunking Behavior**:
+ * - Small content: Single embedding stored directly on node
+ * - Large content: Multiple chunk nodes created with HAS_CHUNK relationships
+ * 
+ * @param id - Node ID to generate embeddings for
+ * 
+ * @returns JSON with embedding generation results
+ * 
+ * @example
+ * // Generate embeddings for a concept node
+ * fetch('/api/nodes/concept-123/embeddings', { method: 'POST' })
+ *   .then(r => r.json())
+ *   .then(data => {
+ *     console.log(`Generated ${data.embeddingCount} embedding(s)`);
+ *     console.log('Chunked:', data.chunked);
+ *     console.log('Model:', data.model);
+ *   });
+ * 
+ * @example
+ * // Generate embeddings for a large document
+ * fetch('/api/nodes/doc-456/embeddings', { method: 'POST' })
+ *   .then(r => r.json())
+ *   .then(data => {
+ *     if (data.chunked) {
+ *       console.log(`Large document split into ${data.embeddingCount} chunks`);
+ *     }
+ *   });
+ * 
+ * @example
+ * // Handle embedding generation errors
+ * try {
+ *   const response = await fetch('/api/nodes/todo-789/embeddings', {
+ *     method: 'POST'
+ *   });
+ *   
+ *   if (response.status === 503) {
+ *     console.error('Embeddings service not enabled');
+ *   } else if (response.status === 400) {
+ *     console.error('Node has no text content');
+ *   } else {
+ *     const data = await response.json();
+ *     console.log('Embeddings generated:', data);
+ *   }
+ * } catch (error) {
+ *   console.error('Failed to generate embeddings:', error);
+ * }
  */
 router.post('/:id/embeddings', requirePermission('nodes:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -648,8 +758,46 @@ router.post('/', requirePermission('nodes:write'), async (req: Request, res: Res
 });
 
 /**
- * PUT /api/nodes/:id
- * Update a node (full update)
+ * PUT /api/nodes/:id - Update node (full replacement)
+ * 
+ * Performs a full update of a node's properties. All existing properties
+ * are replaced with the provided properties object.
+ * 
+ * **Note**: Use PATCH for partial updates to preserve existing properties.
+ * 
+ * @param id - Node ID to update
+ * @param properties - Complete properties object to replace existing data
+ * 
+ * @returns JSON with updated node
+ * 
+ * @example
+ * // Full update of a todo node
+ * fetch('/api/nodes/todo-123', {
+ *   method: 'PUT',
+ *   headers: { 'Content-Type': 'application/json' },
+ *   body: JSON.stringify({
+ *     properties: {
+ *       title: 'Updated Todo',
+ *       status: 'completed',
+ *       description: 'Fully updated description',
+ *       priority: 'high'
+ *     }
+ *   })
+ * }).then(r => r.json());
+ * 
+ * @example
+ * // Replace concept properties
+ * fetch('/api/nodes/concept-456', {
+ *   method: 'PUT',
+ *   headers: { 'Content-Type': 'application/json' },
+ *   body: JSON.stringify({
+ *     properties: {
+ *       name: 'Authentication',
+ *       description: 'Completely new description',
+ *       category: 'security'
+ *     }
+ *   })
+ * }).then(r => r.json());
  */
 router.put('/:id', requirePermission('nodes:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -689,8 +837,52 @@ router.put('/:id', requirePermission('nodes:write'), async (req: Request, res: R
 });
 
 /**
- * PATCH /api/nodes/:id
- * Partially update a node
+ * PATCH /api/nodes/:id - Partially update node properties
+ * 
+ * Performs a partial update (merge) of a node's properties.
+ * Only the provided properties are updated; existing properties
+ * are preserved.
+ * 
+ * **Note**: Use PUT for full replacement of all properties.
+ * 
+ * @param id - Node ID to update
+ * @param properties - Properties to merge with existing data
+ * 
+ * @returns JSON with updated node
+ * 
+ * @example
+ * // Update only the status of a todo
+ * fetch('/api/nodes/todo-123', {
+ *   method: 'PATCH',
+ *   headers: { 'Content-Type': 'application/json' },
+ *   body: JSON.stringify({
+ *     status: 'in_progress'
+ *   })
+ * }).then(r => r.json());
+ * // Other properties (title, description, etc.) remain unchanged
+ * 
+ * @example
+ * // Add metadata to existing node
+ * fetch('/api/nodes/concept-456', {
+ *   method: 'PATCH',
+ *   headers: { 'Content-Type': 'application/json' },
+ *   body: JSON.stringify({
+ *     lastReviewed: new Date().toISOString(),
+ *     reviewCount: 5
+ *   })
+ * }).then(r => r.json());
+ * 
+ * @example
+ * // Update multiple properties while preserving others
+ * fetch('/api/nodes/todo-789', {
+ *   method: 'PATCH',
+ *   headers: { 'Content-Type': 'application/json' },
+ *   body: JSON.stringify({
+ *     priority: 'high',
+ *     assignee: 'user-123',
+ *     updatedAt: Date.now()
+ *   })
+ * }).then(r => r.json());
  */
 router.patch('/:id', requirePermission('nodes:write'), async (req: Request, res: Response) => {
   const { id } = req.params;

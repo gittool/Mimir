@@ -85,9 +85,37 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true' &&
   console.log(`[Auth] Authorization URL: ${authorizationURL}`);
   console.log(`[Auth] Token URL: ${tokenURL}`);
   
-  // Custom state store for OAuth with proper CSRF protection
-  // Stores state parameters in memory with expiration for validation
-  // Defined at module level to enable singleton pattern and cleanup
+  /**
+   * Custom state store for OAuth with proper CSRF protection
+   * 
+   * Stores OAuth state parameters in memory with automatic expiration
+   * for CSRF validation. Implements singleton pattern to prevent memory
+   * leaks during hot reload scenarios.
+   * 
+   * **Security Features**:
+   * - Cryptographically secure random state generation
+   * - Automatic expiration (10 minutes)
+   * - One-time use tokens (deleted after verification)
+   * - Periodic cleanup of expired states
+   * 
+   * @example
+   * // Singleton usage (internal)
+   * const store = SecureStateStore.getInstance();
+   * 
+   * // Store state before OAuth redirect
+   * store.store(req, (err, state) => {
+   *   if (!err) {
+   *     console.log('State generated:', state);
+   *   }
+   * });
+   * 
+   * // Verify state after OAuth callback
+   * store.verify(req, state, (err, valid) => {
+   *   if (valid) {
+   *     console.log('State validated successfully');
+   *   }
+   * });
+   */
   class SecureStateStore {
     private states: Map<string, { timestamp: number; vscodeData?: any }> = new Map();
     private readonly STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
@@ -101,7 +129,18 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true' &&
       this.cleanupTimer.unref();
     }
     
-    // Singleton pattern to prevent multiple instances during hot reload
+    /**
+     * Get singleton instance of SecureStateStore
+     * 
+     * Ensures only one instance exists to prevent memory leaks
+     * during development hot reload scenarios.
+     * 
+     * @returns Singleton SecureStateStore instance
+     * 
+     * @example
+     * const store = SecureStateStore.getInstance();
+     * console.log('Using singleton state store');
+     */
     static getInstance(): SecureStateStore {
       if (!SecureStateStore.instance) {
         SecureStateStore.instance = new SecureStateStore();
@@ -109,7 +148,17 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true' &&
       return SecureStateStore.instance;
     }
     
-    // Module-level cleanup for hot reload scenarios
+    /**
+     * Destroy singleton instance and cleanup resources
+     * 
+     * Called during hot reload or graceful shutdown to prevent
+     * memory leaks and cleanup interval timers.
+     * 
+     * @example
+     * // Cleanup on shutdown
+     * SecureStateStore.destroyInstance();
+     * console.log('State store cleaned up');
+     */
     static destroyInstance() {
       if (SecureStateStore.instance) {
         SecureStateStore.instance.destroy();
@@ -131,7 +180,17 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true' &&
       }
     }
     
-    // Cleanup method to clear interval and states (for testing or shutdown)
+    /**
+     * Cleanup instance resources
+     * 
+     * Clears the cleanup interval timer and all stored states.
+     * Called by destroyInstance() or during testing.
+     * 
+     * @example
+     * const store = new SecureStateStore();
+     * store.destroy();
+     * console.log('Resources released');
+     */
     destroy() {
       if (this.cleanupTimer) {
         clearInterval(this.cleanupTimer);
@@ -140,6 +199,26 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true' &&
       this.states.clear();
     }
     
+    /**
+     * Generate and store OAuth state parameter
+     * 
+     * Creates a cryptographically secure random state token and stores
+     * it with timestamp for later verification. Supports both passport
+     * signatures: store(req, callback) and store(req, meta, callback).
+     * 
+     * @param req - Express request object
+     * @param callbackOrMeta - Callback function or metadata object
+     * @param maybeCallback - Optional callback if meta provided
+     * 
+     * @example
+     * // Used internally by passport-oauth2
+     * store.store(req, (err, state) => {
+     *   if (!err) {
+     *     console.log('Generated state:', state.substring(0, 8) + '...');
+     *     // Redirect to OAuth provider with state parameter
+     *   }
+     * });
+     */
     store(req: any, callbackOrMeta: any, maybeCallback?: any) {
       // Handle both signatures: store(req, callback) and store(req, meta, callback)
       const callback = maybeCallback || callbackOrMeta;
@@ -160,6 +239,34 @@ if (process.env.MIMIR_ENABLE_SECURITY === 'true' &&
       callback(null, state);
     }
     
+    /**
+     * Verify OAuth state parameter for CSRF protection
+     * 
+     * Validates that the state parameter matches a previously stored
+     * state and hasn't expired. Supports both passport signatures:
+     * verify(req, state, callback) and verify(req, state, meta, callback).
+     * 
+     * **Security Checks**:
+     * - State must exist in store
+     * - State must not be expired (10 min TTL)
+     * - State is deleted after verification (one-time use)
+     * 
+     * @param req - Express request object
+     * @param state - State parameter from OAuth callback
+     * @param callbackOrMeta - Callback function or metadata object
+     * @param maybeCallback - Optional callback if meta provided
+     * 
+     * @example
+     * // Used internally by passport-oauth2
+     * store.verify(req, stateFromCallback, (err, valid) => {
+     *   if (valid) {
+     *     console.log('CSRF check passed');
+     *     // Continue with OAuth flow
+     *   } else {
+     *     console.error('CSRF attack detected:', err.message);
+     *   }
+     * });
+     */
     verify(req: any, state: string, callbackOrMeta: any, maybeCallback?: any) {
       // Handle both signatures: verify(req, state, callback) and verify(req, state, meta, callback)
       const callback = maybeCallback || callbackOrMeta;
