@@ -34,6 +34,19 @@ import { requirePermission } from '../middleware/rbac.js';
 const router = Router();
 
 /**
+ * Safely convert Neo4j integers to JavaScript numbers.
+ * Handles both Neo4j Integer objects (with .toInt()) and plain numbers.
+ * Works with both Neo4j and NornicDB backends.
+ */
+const toInt = (value: any): number => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value?.toInt === 'function') return value.toInt();
+  if (typeof value?.toNumber === 'function') return value.toNumber();
+  return parseInt(String(value), 10) || 0;
+};
+
+/**
  * GET /api/nodes/types - List all node types with counts
  * 
  * Returns all node types in the graph (excluding files/chunks) with counts.
@@ -71,7 +84,7 @@ router.get('/types', requirePermission('nodes:read'), async (req: Request, res: 
 
     const types = result.records.map(record => ({
       type: record.get('nodeType'),
-      count: record.get('nodeCount').toInt()
+      count: toInt(record.get('nodeCount'))
     }));
 
     res.json({ types });
@@ -224,7 +237,7 @@ router.get('/types/:type', requirePermission('nodes:read'), async (req: Request,
       { type }
     );
 
-    const total = countResult.records[0].get('total').toInt();
+    const total = toInt(countResult.records[0].get('total'));
 
     // Get paginated nodes with edge counts and embedding counts
     const result = await session.run(
@@ -265,8 +278,8 @@ router.get('/types/:type', requirePermission('nodes:read'), async (req: Request,
       displayName: record.get('displayName'),
       created: record.get('created'),
       updated: record.get('updated'),
-      edgeCount: record.get('edgeCount').toInt(),
-      embeddingCount: record.get('embeddingCount').toInt(),
+      edgeCount: toInt(record.get('edgeCount')),
+      embeddingCount: toInt(record.get('embeddingCount')),
       properties: record.get('properties')
     }));
 
@@ -479,7 +492,7 @@ router.delete('/:id', requirePermission('nodes:delete'), async (req: Request, re
       { id }
     );
 
-    const edgeCount = deleteResult.records[0].get('edgeCount').toInt();
+    const edgeCount = toInt(deleteResult.records[0].get('edgeCount'));
 
     console.log(`🗑️  Deleted node ${id} (${nodeType}: ${nodeName}) and ${edgeCount} edges`);
 

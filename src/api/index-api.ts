@@ -7,6 +7,19 @@ import { promises as fs } from 'fs';
 
 const router = Router();
 
+/**
+ * Safely convert Neo4j integers to JavaScript numbers.
+ * Handles both Neo4j Integer objects (with .toInt()) and plain numbers.
+ * Works with both Neo4j and NornicDB backends.
+ */
+const toInt = (value: any): number => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value?.toInt === 'function') return value.toInt();
+  if (typeof value?.toNumber === 'function') return value.toNumber();
+  return parseInt(String(value), 10) || 0;
+};
+
 // Get FileWatchManager instance from global (set in http-server.ts)
 const getWatchManager = (): FileWatchManager => {
   const manager = (globalThis as any).fileWatchManager;
@@ -87,9 +100,9 @@ router.get('/indexed-folders', async (req: Request, res: Response) => {
           );
 
           const record = result.records[0];
-          const fileCount = record ? record.get('fileCount').toInt() : 0;
-          const chunkCount = record ? record.get('chunkCount').toInt() : 0;
-          const embeddingCount = record ? record.get('embeddingCount').toInt() : 0;
+          const fileCount = record ? toInt(record.get('fileCount')) : 0;
+          const chunkCount = record ? toInt(record.get('chunkCount')) : 0;
+          const embeddingCount = record ? toInt(record.get('embeddingCount')) : 0;
 
           // Convert Neo4j DateTime to ISO string
           const lastSyncDate: any = config.last_indexed || config.added_date;
@@ -320,8 +333,8 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
         watchConfigId: config.id
       });
       
-      let filesDeleted = relResult.records[0]?.get('files_deleted')?.toNumber() || 0;
-      let chunksDeleted = relResult.records[0]?.get('chunks_deleted')?.toNumber() || 0;
+      let filesDeleted = toInt(relResult.records[0]?.get('files_deleted'));
+      let chunksDeleted = toInt(relResult.records[0]?.get('chunks_deleted'));
       
       // Step 2: Fallback to path-based deletion (for orphaned files from old code)
       const folderPathWithSep = containerPath.endsWith('/') ? containerPath : containerPath + '/';
@@ -339,8 +352,8 @@ router.delete('/indexed-folders', async (req: Request, res: Response) => {
         exactPath: containerPath
       });
       
-      const pathFilesDeleted = pathResult.records[0]?.get('files_deleted')?.toNumber() || 0;
-      const pathChunksDeleted = pathResult.records[0]?.get('chunks_deleted')?.toNumber() || 0;
+      const pathFilesDeleted = toInt(pathResult.records[0]?.get('files_deleted'));
+      const pathChunksDeleted = toInt(pathResult.records[0]?.get('chunks_deleted'));
       
       filesDeleted += pathFilesDeleted;
       chunksDeleted += pathChunksDeleted;
@@ -645,9 +658,9 @@ router.get('/index-stats', async (req: Request, res: Response) => {
       `);
 
       const statsRecord = statsResult.records[0];
-      const totalFiles = statsRecord ? statsRecord.get('totalFiles').toInt() : 0;
-      const totalChunks = statsRecord ? statsRecord.get('totalChunks').toInt() : 0;
-      const totalEmbeddings = statsRecord ? statsRecord.get('totalEmbeddings').toInt() : 0;
+      const totalFiles = statsRecord ? toInt(statsRecord.get('totalFiles')) : 0;
+      const totalChunks = statsRecord ? toInt(statsRecord.get('totalChunks')) : 0;
+      const totalEmbeddings = statsRecord ? toInt(statsRecord.get('totalEmbeddings')) : 0;
 
       // Get file count by extension
       const extensionResult = await session.run(`
@@ -661,7 +674,7 @@ router.get('/index-stats', async (req: Request, res: Response) => {
       const byExtension: Record<string, number> = {};
       extensionResult.records.forEach(record => {
         const ext = record.get('ext');
-        const count = record.get('count').toInt();
+        const count = toInt(record.get('count'));
         byExtension[ext || '(no extension)'] = count;
       });
 
@@ -678,7 +691,7 @@ router.get('/index-stats', async (req: Request, res: Response) => {
       const byType: Record<string, number> = {};
       typeResult.records.forEach(record => {
         const type = record.get('type');
-        const count = record.get('count').toInt();
+        const count = toInt(record.get('count'));
         byType[type] = count;
       });
 
@@ -1003,9 +1016,9 @@ router.post('/cleanup-invalid-watchconfigs', async (req: Request, res: Response)
       `);
 
       const fileStats = fileResult.records[0];
-      const deletedFiles = fileStats ? fileStats.get('fileCount').toInt() : 0;
-      const deletedChunks = fileStats ? fileStats.get('chunkCount').toInt() : 0;
-      const deletedEmbeddings = fileStats ? fileStats.get('embeddingCount').toInt() : 0;
+      const deletedFiles = fileStats ? toInt(fileStats.get('fileCount')) : 0;
+      const deletedChunks = fileStats ? toInt(fileStats.get('chunkCount')) : 0;
+      const deletedEmbeddings = fileStats ? toInt(fileStats.get('embeddingCount')) : 0;
 
       res.json({
         success: true,
