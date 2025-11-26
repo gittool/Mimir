@@ -512,7 +512,7 @@ async function ensureDocsIndexed(configManager: WatchConfigManager) {
   const session = driver.session();
   try {
     const result = await session.run(`
-      MATCH (f:file)
+      MATCH (f:File)
       WHERE f.path STARTS WITH '/app/docs/' OR f.path = '/app/docs'
       RETURN count(f) as docCount
       LIMIT 1

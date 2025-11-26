@@ -8,12 +8,37 @@
 import { Driver } from 'neo4j-driver';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import { EmbeddingsService, ChunkEmbeddingResult, formatMetadataForEmbedding, FileMetadata } from './EmbeddingsService.js';
 import { DocumentParser } from './DocumentParser.js';
 import { getHostWorkspaceRoot } from '../utils/path-utils.js';
 import { ImageProcessor } from './ImageProcessor.js';
 import { VLService } from './VLService.js';
 import { LLMConfigLoader } from '../config/LLMConfigLoader.js';
+
+/**
+ * Generate a deterministic hash-based ID for content
+ * This ensures idempotent re-indexing without duplicate creation issues
+ */
+export function generateContentHash(content: string, prefix: string = ''): string {
+  const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
+  return prefix ? `${prefix}-${hash}` : hash;
+}
+
+/**
+ * Generate a deterministic chunk ID based on file path and chunk content
+ */
+export function generateChunkId(filePath: string, chunkIndex: number, chunkText: string): string {
+  const contentHash = generateContentHash(chunkText);
+  return `chunk-${generateContentHash(filePath)}-${chunkIndex}-${contentHash}`;
+}
+
+/**
+ * Generate a deterministic file ID based on path
+ */
+export function generateFileId(filePath: string): string {
+  return `file-${generateContentHash(filePath)}`;
+}
 
 export interface IndexResult {
   file_node_id: string;
@@ -477,17 +502,20 @@ export class FileIndexer {
               const enrichedContent = metadataPrefix + content;
               const chunkEmbeddings = await this.embeddingsService.generateChunkEmbeddings(enrichedContent);
               
-              // Create FileChunk nodes with embeddings and sequential relationships
-              let previousChunkId: string | null = null;
+              // Create FileChunk nodes with embeddings
+              // Using content-based hashing for deterministic IDs (idempotent re-indexing)
+              // Using parent_file_id property instead of NEXT_CHUNK relationships for simpler queries
+              const totalChunks = chunkEmbeddings.length;
               
               for (const chunk of chunkEmbeddings) {
-                // Generate unique chunk ID
-                const chunkId = `chunk-${relativePath}-${chunk.chunkIndex}`;
+                // Generate deterministic chunk ID based on content hash
+                // This ensures the same chunk always gets the same ID
+                const chunkId = generateChunkId(relativePath, chunk.chunkIndex, chunk.text);
                 
-                const result = await session.run(`
+                await session.run(`
                   MATCH (f:File) WHERE id(f) = $fileNodeId
                   MERGE (c:FileChunk:Node {id: $chunkId})
-                  ON CREATE SET
+                  SET
                       c.chunk_index = $chunkIndex,
                       c.text = $text,
                       c.start_offset = $startOffset,
@@ -499,18 +527,11 @@ export class FileIndexer {
                       c.indexed_date = datetime(),
                       c.filePath = f.path,
                       c.fileName = f.name,
-                      c.parentFileId = id(f)
-                  ON MATCH SET
-                      c.chunk_index = $chunkIndex,
-                      c.text = $text,
-                      c.start_offset = $startOffset,
-                      c.end_offset = $endOffset,
-                      c.embedding = $embedding,
-                      c.embedding_dimensions = $dimensions,
-                      c.embedding_model = $model,
-                      c.indexed_date = datetime()
+                      c.parent_file_id = $parentFileId,
+                      c.total_chunks = $totalChunks,
+                      c.has_next = $hasNext,
+                      c.has_prev = $hasPrev
                   MERGE (f)-[:HAS_CHUNK {index: $chunkIndex}]->(c)
-                  RETURN c.id AS chunk_id
                 `, {
                   fileNodeId,
                   chunkId,
@@ -520,28 +541,17 @@ export class FileIndexer {
                   endOffset: chunk.endOffset,
                   embedding: chunk.embedding,
                   dimensions: chunk.dimensions,
-                  model: chunk.model
+                  model: chunk.model,
+                  parentFileId: fileNodeId,
+                  totalChunks,
+                  hasNext: chunk.chunkIndex < totalChunks - 1,
+                  hasPrev: chunk.chunkIndex > 0
                 });
                 
-                const currentChunkId = result.records[0].get('chunk_id');
-                
-                // Create NEXT_CHUNK relationship from previous chunk to current
-                if (previousChunkId) {
-                  await session.run(`
-                    MATCH (prev:FileChunk {id: $prevId})
-                    MATCH (curr:FileChunk {id: $currId})
-                    CREATE (prev)-[:NEXT_CHUNK]->(curr)
-                  `, {
-                    prevId: previousChunkId,
-                    currId: currentChunkId
-                  });
-                }
-                
-                previousChunkId = currentChunkId;
                 chunksCreated++;
               }
               
-              console.log(`✅ Created ${chunksCreated} chunk embeddings with sequential links for ${displayPath}`);
+              console.log(`✅ Created ${chunksCreated} chunk embeddings for ${displayPath}`);
             } else {
               // Small file: Store embedding directly on File node with metadata enrichment
               const enrichedContent = metadataPrefix + content;
