@@ -405,7 +405,7 @@ beforeAll(async () => {
   }
   
   console.log('\n' + '─'.repeat(72) + '\n');
-});
+}, 60000);  // 60 second timeout for setup
 
 afterAll(async () => {
   console.log('\n' + '─'.repeat(72));
@@ -424,7 +424,7 @@ afterAll(async () => {
   if (neo4jDriver) await neo4jDriver.close();
   
   console.log('✓ Cleanup complete\n');
-});
+}, 30000);  // 30 second timeout for cleanup
 
 // ============================================================================
 // NORNICDB BENCHMARKS
