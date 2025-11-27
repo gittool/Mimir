@@ -4,8 +4,8 @@ services:
       context: ./nornicdb
       dockerfile: Dockerfile.cuda
       tags:
-        - timothyswt/nornicdb-amd64-cuda:latest
-    image: timothyswt/nornicdb-amd64-cuda:latest
+        - timothyswt/nornicdb:cuda
+    image: timothyswt/nornicdb:cuda
     container_name: nornicdb
     ports:
       - "7474:7474"  # HTTP API & Browser UI
