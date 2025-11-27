@@ -4,8 +4,8 @@ services:
       context: ./nornicdb
       dockerfile: Dockerfile
       tags:
-        - timothyswt/nornicdb-arm64:latest
-    image: timothyswt/nornicdb-arm64:latest
+        - timothyswt/nornicdb-arm64-metal:latest
+    image: timothyswt/nornicdb-arm64-metal:latest
     container_name: nornicdb
     ports:
       - "7474:7474"  # HTTP API & Browser UI
