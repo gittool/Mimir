@@ -28,6 +28,7 @@ config/rbac.*.json
 !config/rbac.json
 docker/llama-cpp/models/*
 nornicdb/nornicdb
+nornicdb/nornicdb_local
 # BadgerDB test data directories (created by nornicdb tests)
 nornicdb/pkg/nornicdb/testdata/
 nornicdb/pkg/nornicdb/custom/
