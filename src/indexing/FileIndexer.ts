@@ -54,6 +54,8 @@ export class FileIndexer {
   private imageProcessor: ImageProcessor | null = null;
   private vlService: VLService | null = null;
   private configLoader: LLMConfigLoader;
+  private isNornicDB: boolean = false;
+  private providerDetected: boolean = false;
 
   constructor(private driver: Driver) {
     this.embeddingsService = new EmbeddingsService();
@@ -62,11 +64,59 @@ export class FileIndexer {
   }
 
   /**
+   * Detect database provider (NornicDB vs Neo4j)
+   * Same detection logic as GraphManager for consistency
+   */
+  private async detectDatabaseProvider(): Promise<void> {
+    // Check for manual override
+    const manualProvider = process.env.MIMIR_DATABASE_PROVIDER?.toLowerCase();
+    if (manualProvider === 'nornicdb') {
+      this.isNornicDB = true;
+      return;
+    } else if (manualProvider === 'neo4j') {
+      this.isNornicDB = false;
+      return;
+    }
+
+    // Auto-detect via server metadata
+    const session = this.driver.session();
+    try {
+      const result = await session.run('RETURN 1 as test');
+      const serverAgent = result.summary.server?.agent || '';
+      
+      if (serverAgent.toLowerCase().includes('nornicdb')) {
+        this.isNornicDB = true;
+      } else {
+        this.isNornicDB = false;
+      }
+    } catch (error) {
+      // Default to Neo4j on error
+      this.isNornicDB = false;
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
    * Initialize embeddings service (lazy loading)
+   * Skips initialization if connected to NornicDB
    */
   private async initEmbeddings(): Promise<void> {
     if (!this.embeddingsInitialized) {
-      await this.embeddingsService.initialize();
+      // Detect provider on first call
+      if (!this.providerDetected) {
+        await this.detectDatabaseProvider();
+        this.providerDetected = true;
+        
+        if (this.isNornicDB) {
+          console.log('🗄️  FileIndexer: NornicDB detected - skipping embeddings service initialization');
+        }
+      }
+      
+      // Only initialize embeddings service for Neo4j
+      if (!this.isNornicDB) {
+        await this.embeddingsService.initialize();
+      }
       this.embeddingsInitialized = true;
     }
   }
@@ -479,7 +529,8 @@ export class FileIndexer {
       let chunksCreated = 0;
 
       // Generate and store embeddings if enabled and not already present
-      if (generateEmbeddings && !hasExistingChunks) {
+      // Skip embedding generation for NornicDB (database handles it natively)
+      if (generateEmbeddings && !hasExistingChunks && !this.isNornicDB) {
         await this.initEmbeddings();
         if (this.embeddingsService.isEnabled()) {
           try {

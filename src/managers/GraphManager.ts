@@ -72,6 +72,8 @@ export class GraphManager implements IGraphManager {
   private edgeCounter = 0;
   private embeddingsService: EmbeddingsService | null = null;
   private unifiedSearchService: UnifiedSearchService;
+  private isNornicDB: boolean = false;
+  private providerDetected: boolean = false;
 
   constructor(uri: string, user: string, password: string) {
     this.driver = neo4j.driver(
@@ -84,12 +86,8 @@ export class GraphManager implements IGraphManager {
       }
     );
     
-    // Initialize embeddings service
-    this.embeddingsService = new EmbeddingsService();
-    this.embeddingsService.initialize().catch(err => {
-      console.warn('⚠️  Failed to initialize embeddings service:', err.message);
-      this.embeddingsService = null;
-    });
+    // Note: Embeddings service initialization deferred until after provider detection
+    // This happens in initialize() to avoid wasting resources on NornicDB connections
     
     // Initialize unified search service
     this.unifiedSearchService = new UnifiedSearchService(this.driver);
@@ -141,6 +139,69 @@ export class GraphManager implements IGraphManager {
   }
 
   /**
+   * Detect whether we're connected to NornicDB or Neo4j
+   * 
+   * Uses multiple detection methods in priority order:
+   * 1. Manual override via MIMIR_DATABASE_PROVIDER env var
+   * 2. Server metadata/version string detection
+   * 3. Presence of NornicDB-specific procedures
+   * 
+   * @private
+   * @returns Promise that resolves when detection is complete
+   */
+  private async detectDatabaseProvider(): Promise<void> {
+    // Method 1: Check for manual override
+    const manualProvider = process.env.MIMIR_DATABASE_PROVIDER?.toLowerCase();
+    if (manualProvider === 'nornicdb') {
+      console.log('🔧 Database provider manually set to NornicDB via MIMIR_DATABASE_PROVIDER');
+      this.isNornicDB = true;
+      return;
+    } else if (manualProvider === 'neo4j') {
+      console.log('🔧 Database provider manually set to Neo4j via MIMIR_DATABASE_PROVIDER');
+      this.isNornicDB = false;
+      return;
+    }
+
+    // Method 2: Auto-detect via server metadata
+    const session = this.driver.session();
+    try {
+      // Execute a simple query and check server metadata
+      const result = await session.run('RETURN 1 as test');
+      const summary = result.summary;
+      
+      // Check server agent string
+      const serverInfo = summary.server;
+      const serverAgent = serverInfo?.agent || '';
+      const serverVersion = serverInfo?.protocolVersion?.toString() || '';
+      
+      // NornicDB identifies itself in the server agent
+      if (serverAgent.toLowerCase().includes('nornicdb')) {
+        console.log(`🗄️  Detected NornicDB (${serverAgent})`);
+        this.isNornicDB = true;
+        return;
+      }
+      
+      // Neo4j standard identification
+      if (serverAgent.toLowerCase().includes('neo4j')) {
+        console.log(`🗄️  Detected Neo4j (${serverAgent})`);
+        this.isNornicDB = false;
+        return;
+      }
+      
+      // Fallback: assume Neo4j if we can't detect NornicDB
+      console.log(`🗄️  Unable to detect database provider, defaulting to Neo4j (agent: ${serverAgent})`);
+      this.isNornicDB = false;
+      
+    } catch (error: any) {
+      console.warn(`⚠️  Database provider detection failed: ${error.message}`);
+      console.log('🗄️  Defaulting to Neo4j');
+      this.isNornicDB = false;
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
    * Initialize database schema: create indexes, constraints, and vector indexes
    * 
    * This method sets up the Neo4j database with all necessary indexes and constraints
@@ -185,6 +246,23 @@ export class GraphManager implements IGraphManager {
   async initialize(): Promise<void> {
     const session = this.driver.session();
     try {
+      // Detect database provider (NornicDB vs Neo4j) on first initialization
+      if (!this.providerDetected) {
+        await this.detectDatabaseProvider();
+        this.providerDetected = true;
+        
+        // Initialize embeddings service only if NOT using NornicDB
+        if (!this.isNornicDB) {
+          this.embeddingsService = new EmbeddingsService();
+          await this.embeddingsService.initialize().catch(err => {
+            console.warn('⚠️  Failed to initialize embeddings service:', err.message);
+            this.embeddingsService = null;
+          });
+        } else {
+          console.log('🗄️  NornicDB detected - embeddings will be handled by database');
+        }
+      }
+      
       // Unique constraint on node IDs
       await session.run(`
         CREATE CONSTRAINT node_id_unique IF NOT EXISTS 
@@ -540,9 +618,10 @@ export class GraphManager implements IGraphManager {
       );
 
       // Now generate embeddings if enabled and not already provided
+      // Skip embedding generation for NornicDB (database handles it natively)
       const hasExistingEmbedding = actualProperties.embedding || actualProperties.has_embedding === true;
       
-      if (this.embeddingsService && !hasExistingEmbedding) {
+      if (!this.isNornicDB && this.embeddingsService && !hasExistingEmbedding) {
         // Ensure embeddings service is initialized
         if (!this.embeddingsService.isEnabled()) {
           await this.embeddingsService.initialize();
@@ -739,12 +818,13 @@ export class GraphManager implements IGraphManager {
       const updatedNode = result.records[0].get('n');
 
       // Regenerate embeddings if content changed and embeddings service is enabled
+      // Skip embedding regeneration for NornicDB (database handles it natively)
       const contentChanged = properties.content !== undefined || 
                             properties.text !== undefined || 
                             properties.title !== undefined ||
                             properties.description !== undefined;
 
-      if (contentChanged && this.embeddingsService) {
+      if (!this.isNornicDB && contentChanged && this.embeddingsService) {
         // Ensure embeddings service is initialized
         if (!this.embeddingsService.isEnabled()) {
           await this.embeddingsService.initialize();
