@@ -53,6 +53,7 @@ services:
       - GOGC=50
       - NORNICDB_GPU_ENABLED=${NORNICDB_GPU_ENABLED:-true}
       - NORNICDB_GPU_DEVICE_ID=${NORNICDB_GPU_DEVICE_ID:-0}
+      - NORNICDB_EMBEDDING_CACHE_SIZE=0
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:7474/health || exit 1"]
