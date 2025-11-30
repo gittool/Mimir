@@ -16,7 +16,7 @@
     "build:all": "npm run build && npm run build:frontend && npm run build:vscode",
     "build:docker": "npm run build:all && node ./scripts/build-docker.js",
     "help": "node ./scripts/start.js help",
-    "start": "node ./scripts/start.js up",
+    "start": "node ./scripts/start.js up --force-recreate",
     "start:mcp": "node build/index.js",
     "start:http": "node build/http-server.js",
     "stop": "node ./scripts/start.js down",
