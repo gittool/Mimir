@@ -358,6 +358,17 @@ export class FileIndexer {
     let content: string = '';
     let isImage = false;
     
+    // CRITICAL: Detect provider BEFORE making content storage decisions
+    // This ensures NornicDB detection happens before shouldStoreFullContent is evaluated
+    if (!this.providerDetected) {
+      await this.detectDatabaseProvider();
+      this.providerDetected = true;
+      
+      if (this.isNornicDB) {
+        console.log('🗄️  FileIndexer: NornicDB detected - full content will be stored for native embedding');
+      }
+    }
+    
     try {
       const relativePath = path.relative(rootPath, filePath);
       const extension = path.extname(filePath).toLowerCase();
