@@ -41,7 +41,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install mkdocs mkdocs-material pymdown-extensions
+          pip install mkdocs mkdocs-material pymdown-extensions mkdocs-minify-plugin
           go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest
 
       - name: Generate API reference from GoDoc
