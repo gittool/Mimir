@@ -46,7 +46,7 @@ A clean separation of concerns:
 │                    NORNICDB (Embedding Layer)                    │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │ Today: Single Text Embedding Model                         │  │
-│  │  └── All text → mxbai-embed-large → 1024d vectors         │  │
+│  │  └── All text → bge-m3 → 1024d vectors         │  │
 │  └───────────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │ Future: Multimodal Embedding (when models mature)          │  │
@@ -394,7 +394,7 @@ NEO4J_URI=bolt://nornicdb:7687
 ```bash
 # Text Embedding (current)
 NORNICDB_EMBEDDING_API_URL=http://llama-server:8080
-NORNICDB_EMBEDDING_MODEL=mxbai-embed-large
+NORNICDB_EMBEDDING_MODEL=bge-m3
 NORNICDB_EMBEDDING_DIMENSIONS=1024
 
 # Multimodal (future, disabled)

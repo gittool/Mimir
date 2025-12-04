@@ -1,4 +1,4 @@
-# Build llama.cpp server for ARM64 (Apple Silicon) with mxbai-embed-large
+# Build llama.cpp server for ARM64 (Apple Silicon) with bge-m3
 FROM ubuntu:22.04 AS builder
 
 # Install build dependencies
@@ -39,10 +39,10 @@ COPY --from=builder /build/build/bin/llama-server /usr/local/bin/llama-server
 # Create models directory
 RUN mkdir -p /models
 
-# Download mxbai-embed-large model (1024 dimensions)
-# You need to place the model file at docker/llama-cpp/models/mxbai-embed-large.gguf
-# Download from: https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1-GGUF
-COPY docker/llama-cpp/models/mxbai-embed-large.gguf /models/mxbai-embed-large.gguf
+# Download bge-m3 model (1024 dimensions)
+# You need to place the model file at docker/llama-cpp/models/bge-m3.gguf
+# Download from: https://huggingface.co/mixedbread-ai/bge-m3-v1-GGUF
+COPY docker/llama-cpp/models/bge-m3.gguf /models/bge-m3.gguf
 
 # Expose port
 EXPOSE 8080
@@ -54,6 +54,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Set working directory
 WORKDIR /app
 
-# Default command with mxbai-embed-large model (1024 dimensions)
+# Default command with bge-m3 model (1024 dimensions)
 ENTRYPOINT ["/usr/local/bin/llama-server"]
-CMD ["--host", "0.0.0.0", "--port", "8080", "--model", "/models/mxbai-embed-large.gguf", "--embeddings", "--pooling", "mean", "--ctx-size", "2048", "--parallel", "4"]
+CMD ["--host", "0.0.0.0", "--port", "8080", "--model", "/models/bge-m3.gguf", "--embeddings", "--pooling", "mean", "--ctx-size", "2048", "--parallel", "4"]

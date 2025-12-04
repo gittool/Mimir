@@ -179,7 +179,7 @@ MIMIR_LLM_API_KEY=dummy-key                     # Optional (use for OpenAI API)
 MIMIR_DEFAULT_MODEL=gpt-4.1                     # Default: gpt-4.1
 
 # Embeddings Configuration
-MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large        # Default: mxbai-embed-large
+MIMIR_EMBEDDINGS_MODEL=bge-m3        # Default: bge-m3
 MIMIR_EMBEDDINGS_API=http://llama-server:8080  # Embeddings endpoint
 MIMIR_EMBEDDINGS_API_PATH=/v1/embeddings       # Optional (default: /v1/embeddings)
 MIMIR_EMBEDDINGS_DIMENSIONS=1024               # Default: 1024
@@ -197,7 +197,7 @@ MIMIR_EMBEDDINGS_CHUNK_SIZE=768                # Default: 768
 MIMIR_DEFAULT_PROVIDER=openai
 MIMIR_LLM_API=http://copilot-api:4141
 MIMIR_DEFAULT_MODEL=gpt-4.1
-MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large
+MIMIR_EMBEDDINGS_MODEL=bge-m3
 MIMIR_EMBEDDINGS_DIMENSIONS=1024
 MIMIR_EMBEDDINGS_CHUNK_SIZE=768
 ```
@@ -207,7 +207,7 @@ MIMIR_EMBEDDINGS_CHUNK_SIZE=768
 MIMIR_DEFAULT_PROVIDER=ollama
 MIMIR_LLM_API=http://ollama:11434
 MIMIR_DEFAULT_MODEL=qwen2.5-coder
-MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large
+MIMIR_EMBEDDINGS_MODEL=bge-m3
 ```
 
 **Example 3: OpenAI API** (cloud-based, requires API key):
@@ -258,7 +258,7 @@ Embeddings can use the same endpoint as your LLM, or a separate specialized serv
 
 **Supported Embedding Models:**
 - `nomic-embed-text` (default - lightweight, 768 dims)
-- `mxbai-embed-large` (higher quality, 1024 dims)
+- `bge-m3` (higher quality, 1024 dims)
 - `text-embedding-3-small` (OpenAI, 1536 dims - requires OpenAI LLM provider)
 
 #### Advanced Settings (Optional)
@@ -766,7 +766,7 @@ MIMIR_LLM_API=http://copilot-api:4141
 MIMIR_DEFAULT_MODEL=gpt-4.1          # Default: gpt-4.1
 
 # Embedding Model
-MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large
+MIMIR_EMBEDDINGS_MODEL=bge-m3
 ```
 
 #### Provider Examples
@@ -776,7 +776,7 @@ MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large
 MIMIR_DEFAULT_PROVIDER=openai
 MIMIR_LLM_API=http://copilot-api:4141
 MIMIR_DEFAULT_MODEL=gpt-4.1
-MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large
+MIMIR_EMBEDDINGS_MODEL=bge-m3
 ```
 
 **Using Local Ollama**
@@ -784,7 +784,7 @@ MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large
 MIMIR_DEFAULT_PROVIDER=ollama
 MIMIR_LLM_API=http://ollama:11434
 MIMIR_DEFAULT_MODEL=qwen2.5-coder
-MIMIR_EMBEDDINGS_MODEL=mxbai-embed-large
+MIMIR_EMBEDDINGS_MODEL=bge-m3
 ```
 
 **Using OpenAI API**
@@ -857,11 +857,11 @@ All existing conversations and chat history remain intact. The new provider is u
 
 #### Embedding Models
 
-The embedding model determines semantic search quality. **mxbai-embed-large** is the default (high quality, efficient):
+The embedding model determines semantic search quality. **bge-m3** is the default (high quality, efficient):
 
 | Model | Dimensions | Speed | Notes |
 |-------|-----------|-------|-------|
-| `mxbai-embed-large` | 1024 | Fast | **Default - recommended** |
+| `bge-m3` | 1024 | Fast | **Default - recommended** |
 | `nomic-embed-text` | 768 | Fast | Lightweight alternative |
 | `text-embedding-3-small` | 1536 | Fast | OpenAI-compatible, excellent quality |
 
@@ -911,7 +911,7 @@ When you run `docker compose up -d`, you get these services:
 > 
 > Switch providers by changing `MIMIR_DEFAULT_PROVIDER` and `MIMIR_LLM_API` in `.env`
 
-> **Embeddings**: Semantic search uses `MIMIR_EMBEDDINGS_MODEL` (default: `mxbai-embed-large` @ 1024 dimensions):
+> **Embeddings**: Semantic search uses `MIMIR_EMBEDDINGS_MODEL` (default: `bge-m3` @ 1024 dimensions):
 > - Set `MIMIR_EMBEDDINGS_API` to match your embeddings provider
 > - Can use same endpoint as LLM or separate specialized service
 > - See embeddings configuration section above for details

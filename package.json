@@ -83,7 +83,7 @@
     "llama:build-qwen-2b-cuda": "powershell -ExecutionPolicy Bypass -File ./scripts/build-llama-cpp-qwen-vl-cuda.ps1 -ModelSize 2b",
     "llama:build-qwen-7b-cuda": "powershell -ExecutionPolicy Bypass -File ./scripts/build-llama-cpp-qwen-vl-cuda.ps1 -ModelSize 7b",
     "llama:models": "curl -s http://localhost:11434/v1/models | jq",
-    "llama:test": "curl -s http://localhost:11434/v1/embeddings -H 'Content-Type: application/json' -d '{\"model\": \"mxbai-embed-large\", \"input\": \"test\"}' | jq '.data[0].embedding | length'",
+    "llama:test": "curl -s http://localhost:11434/v1/embeddings -H 'Content-Type: application/json' -d '{\"model\": \"bge-m3\", \"input\": \"test\"}' | jq '.data[0].embedding | length'",
     "mimir:build": "npm run build:all && docker build -t timothyswt/mimir-server:latest .",
     "mimir:build:no-cache": "npm run build:all && docker build --no-cache -t timothyswt/mimir-server:latest .",
     "mimir:build:version": "npm run build:all && docker build -t timothyswt/mimir-server:$(node -p \"require('./package.json').version\") -t timothyswt/mimir-server:latest .",
